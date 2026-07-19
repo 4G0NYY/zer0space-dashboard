@@ -31,7 +31,7 @@ module.exports = function createVaultRouter(db) {
     const key = vaultKey(req);
     if (!key) {
       return res.status(409).json({
-        error: 'Vault ist gesperrt — bitte einmal ab- und wieder anmelden, um sie freizuschalten.',
+        error: 'The vault is locked — sign out and back in to unlock it.', code: 'VAULT_LOCKED',
       });
     }
     req.vaultKey = key;
@@ -43,7 +43,7 @@ module.exports = function createVaultRouter(db) {
   function requireCsrf(req, res, next) {
     const sent = req.headers['x-csrf-token'];
     if (!sent || sent !== req.session.csrfToken) {
-      return res.status(403).json({ error: 'Ungültiges CSRF-Token' });
+      return res.status(403).json({ error: 'Invalid CSRF token', code: 'CSRF' });
     }
     next();
   }
@@ -60,7 +60,7 @@ module.exports = function createVaultRouter(db) {
     e.count++;
     hits.set(uid, e);
     if (e.count > RATE_MAX) {
-      return res.status(429).json({ error: 'Zu viele Vault-Anfragen — bitte kurz warten.' });
+      return res.status(429).json({ error: 'Too many vault requests — please wait a moment.', code: 'VAULT_RATE_LIMIT' });
     }
     next();
   }
@@ -138,7 +138,7 @@ module.exports = function createVaultRouter(db) {
 
   router.put('/:id', requireCsrf, requireVaultKey, ah(async (req, res) => {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
 
     const err = validateEntry(req.body);
     if (err) return res.status(400).json({ error: err });
@@ -159,18 +159,18 @@ module.exports = function createVaultRouter(db) {
         url.trim(), id, req.session.userId,
       ]
     );
-    if (!row) return res.status(404).json({ error: 'Eintrag nicht gefunden' });
+    if (!row) return res.status(404).json({ error: 'Entry not found', code: 'ENTRY_NOT_FOUND' });
     res.json(rowToEntry(row, req.vaultKey));
   }));
 
   router.delete('/:id', requireCsrf, ah(async (req, res) => {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
     const r = await db.query(
       'DELETE FROM vault_entries WHERE id = $1 AND user_id = $2',
       [id, req.session.userId]
     );
-    if (r.rowCount === 0) return res.status(404).json({ error: 'Eintrag nicht gefunden' });
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Entry not found', code: 'ENTRY_NOT_FOUND' });
     res.sendStatus(204);
   }));
 

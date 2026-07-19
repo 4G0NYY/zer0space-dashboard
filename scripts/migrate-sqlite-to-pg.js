@@ -40,16 +40,16 @@ function parseArgs(argv) {
 
 function usage() {
   console.log(`
-Migriert die Dashboard-SQLite-DB nach PostgreSQL.
+Migrates the dashboard SQLite DB to PostgreSQL.
 
-  node scripts/migrate-sqlite-to-pg.js --sqlite <pfad/services.db> [--dry-run]
+  node scripts/migrate-sqlite-to-pg.js --sqlite <path/services.db> [--dry-run]
 
-Optionen:
-  --sqlite <pfad>   Pfad zur alten services.db (Pflicht)
-  --dry-run         Nur zaehlen und anzeigen, nichts schreiben
+Options:
+  --sqlite <path>   Path to the old services.db (required)
+  --dry-run         Only count and report, write nothing
 
-Ziel-DB via Umgebungsvariablen (wie beim Server):
-  DATABASE_URL                                  oder
+Target DB via environment variables (same as the server):
+  DATABASE_URL                                  or
   DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASS
 `);
 }
@@ -111,34 +111,34 @@ async function main() {
     Database = require('better-sqlite3');
   } catch {
     console.error(
-      'better-sqlite3 ist nicht installiert. Es ist eine devDependency —\n' +
-      'im Projektverzeichnis einmal "npm install" ausfuehren und erneut starten.'
+      'better-sqlite3 is not installed. It is a devDependency —\n' +
+      'run "npm install" once in the project directory and start again.'
     );
     process.exit(1);
   }
 
   const db = require('../src/db');
 
-  console.log(`[migrate] Quelle : ${sqlitePath}`);
-  console.log(`[migrate] Ziel   : ${db.describeTarget()}`);
-  if (args.dryRun) console.log('[migrate] DRY RUN — es wird nichts geschrieben');
+  console.log(`[migrate] Source : ${sqlitePath}`);
+  console.log(`[migrate] Target : ${db.describeTarget()}`);
+  if (args.dryRun) console.log('[migrate] DRY RUN — nothing will be written');
 
   let sdb;
   try {
     sdb = new Database(sqlitePath, { readonly: true, fileMustExist: true });
   } catch (err) {
-    console.error(`[migrate] SQLite-DB nicht lesbar: ${err.message}`);
+    console.error(`[migrate] SQLite DB not readable: ${err.message}`);
     process.exit(1);
   }
 
   // Fail early with a clear message rather than halfway through.
   const reachable = await db.waitForDb({ attempts: 3, delayMs: 2000 });
   if (!reachable) {
-    console.error('[migrate] PostgreSQL nicht erreichbar — Abbruch, es wurde nichts geschrieben.');
+    console.error('[migrate] PostgreSQL unreachable — aborting, nothing was written.');
     process.exit(1);
   }
   await db.initSchema();
-  console.log('[migrate] Schema in PostgreSQL sichergestellt');
+  console.log('[migrate] Schema ensured in PostgreSQL');
 
   const summary = [];
 
@@ -153,13 +153,13 @@ async function main() {
     if (orphans.length) {
       orphanIds = new Set(orphans.map(o => o.id));
       console.warn(
-        `\n[migrate] WARNUNG: ${orphans.length} Vault-Eintrag/-Eintraege verweisen auf einen ` +
-        `nicht mehr existierenden Benutzer und werden UEBERSPRUNGEN:`
+        `\n[migrate] WARNING: ${orphans.length} vault entry/entries reference a user that ` +
+        `no longer exists and will be SKIPPED:`
       );
       for (const o of orphans) console.warn(`           id=${o.id} user_id=${o.user_id} "${o.title}"`);
       console.warn(
-        '           (Diese Eintraege waeren ohnehin nicht mehr entschluesselbar — der\n' +
-        '            zugehoerige Benutzer und damit sein Schluessel existieren nicht mehr.)\n'
+        '           (These entries would not be decryptable anyway — the owning user,\n' +
+        '            and therefore their key, no longer exists.)\n'
       );
     }
   } catch { /* tables may not exist in a very old DB — handled per-table below */ }
@@ -169,7 +169,7 @@ async function main() {
       for (const table of TABLES) {
         const { cols, rows } = readSqliteTable(sdb, table);
         if (cols.length === 0) {
-          console.log(`[migrate] ${table.name}: Tabelle/Spalten fehlen in der SQLite-DB — uebersprungen`);
+          console.log(`[migrate] ${table.name}: table/columns missing in the SQLite DB — skipped`);
           summary.push({ table: table.name, read: 0, inserted: 0, skipped: 0 });
           continue;
         }
@@ -193,9 +193,9 @@ async function main() {
         const skipped = args.dryRun ? 0 : rows.length - inserted - orphansSkipped;
         summary.push({ table: table.name, read: rows.length, inserted, skipped, orphansSkipped });
         console.log(
-          `[migrate] ${table.name}: ${rows.length} gelesen, ` +
-          `${args.dryRun ? '(dry-run)' : `${inserted} eingefuegt, ${skipped} bereits vorhanden`}` +
-          `${orphansSkipped ? `, ${orphansSkipped} verwaist uebersprungen` : ''}`
+          `[migrate] ${table.name}: ${rows.length} read, ` +
+          `${args.dryRun ? '(dry-run)' : `${inserted} inserted, ${skipped} already present`}` +
+          `${orphansSkipped ? `, ${orphansSkipped} orphaned skipped` : ''}`
         );
       }
 
@@ -217,37 +217,37 @@ async function main() {
           [table.name]
         );
       }
-      console.log('[migrate] Sequenzen auf den hoechsten uebernommenen Wert gesetzt');
+      console.log('[migrate] Sequences set to the highest migrated value');
     });
   } catch (err) {
     if (err.dryRun) {
-      console.log('[migrate] DRY RUN beendet — Transaktion zurueckgerollt, nichts geschrieben.');
+      console.log('[migrate] DRY RUN finished — transaction rolled back, nothing written.');
       await db.pool.end();
       sdb.close();
       process.exit(0);
     }
-    console.error(`[migrate] FEHLER — Transaktion zurueckgerollt, es wurde nichts geschrieben: ${err.message}`);
+    console.error(`[migrate] ERROR — transaction rolled back, nothing was written: ${err.message}`);
     await db.pool.end();
     sdb.close();
     process.exit(1);
   }
 
   // Post-migration sanity check: compare row counts.
-  console.log('\n[migrate] Kontrolle (Zeilen in PostgreSQL):');
+  console.log('\n[migrate] Verification (rows in PostgreSQL):');
   for (const table of TABLES) {
     const { c } = await db.one(`SELECT COUNT(*)::int AS c FROM ${table.name}`);
     const s = summary.find(x => x.table === table.name);
-    console.log(`  ${table.name.padEnd(15)} PostgreSQL: ${String(c).padStart(5)}   SQLite gelesen: ${String(s?.read ?? 0).padStart(5)}`);
+    console.log(`  ${table.name.padEnd(15)} PostgreSQL: ${String(c).padStart(5)}   SQLite read: ${String(s?.read ?? 0).padStart(5)}`);
   }
 
   console.log(`
-[migrate] Fertig.
+[migrate] Done.
 
-Naechste Schritte:
-  1. Dashboard mit den DB_*-Variablen neu deployen und einloggen.
-  2. Pruefen: Services, Benutzer, Theme, Vault-Eintraege sichtbar?
-  3. Die alte services.db NICHT sofort loeschen — erst nach erfolgreicher
-     Kontrolle, sie ist das einzige Rollback.
+Next steps:
+  1. Redeploy the dashboard with the DB_* variables set and sign in.
+  2. Check: are services, users, theme and vault entries all visible?
+  3. Do NOT delete the old services.db yet — only after a successful check,
+     it is the only rollback you have.
 `);
 
   await db.pool.end();
@@ -255,6 +255,6 @@ Naechste Schritte:
 }
 
 main().catch((err) => {
-  console.error(`[migrate] Unerwarteter Fehler: ${err.stack || err.message}`);
+  console.error(`[migrate] Unexpected error: ${err.stack || err.message}`);
   process.exit(1);
 });

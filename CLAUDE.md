@@ -47,10 +47,57 @@ src/
 ├── vault-crypto.js   PBKDF2 key derivation + AES-256-GCM for vault entries
 ├── routes/
 │   └── vault.js      Vault CRUD router (mounted at /api/vault)
-└── public/           Static frontend — index.html, login.html, app.js, login.js, style.css
+└── public/           Static frontend
+    ├── i18n.js       German/English dictionary + applyI18n() (load FIRST)
+    ├── app.js        Dashboard logic
+    ├── login.js      Login form
+    ├── index.html    Dashboard markup
+    ├── login.html    Login page
+    └── style.css
 scripts/
 └── migrate-sqlite-to-pg.js   One-shot migration from the pre-v3 SQLite file
 ```
+
+## Internationalisation (German / English)
+
+The UI ships in both German and English, switchable at runtime via the DE/EN
+toggle in the topbar and in Settings. `src/public/i18n.js` owns this and must be
+loaded **before** `app.js` / `login.js` — both rely on the globals it defines
+(`window.t`, `window.I18N`).
+
+**When you add or change any user-facing string, you must touch three places:**
+
+1. Add the key to **both** the `de` and `en` dictionaries in `i18n.js`. They are
+   kept at exact parity — a key in one but not the other is a bug.
+2. In markup, put the key in an attribute rather than hardcoding text:
+   `data-i18n` (textContent), `data-i18n-ph` (placeholder), `data-i18n-title`,
+   `data-i18n-aria`, `data-i18n-alt`. Leave the German text inside the element as
+   the pre-JS default.
+3. In JavaScript, call `t('key')` — never a literal. Use `t('key', { name })` for
+   `{placeholder}` interpolation.
+
+Server-side messages are **not** translated on the server. Every error response
+carries a stable `code` (`res.status(400).json({ error: 'English text', code: 'PW_TOO_SHORT' })`)
+and the client resolves it through `I18N.tError(data)` to an `err.<CODE>`
+dictionary key. If you add a new error response, give it a code and add the
+matching `err.*` key to both dictionaries. An unknown code falls back to the
+server's English `error` text, so a missed key degrades gracefully rather than
+showing a blank.
+
+Two things that are easy to get wrong:
+
+- **Markup built in JavaScript** (service tiles, user rows, vault entries) carries
+  no `data-i18n` attributes, so `applyI18n()` cannot reach it. Those views are
+  re-rendered by the `languagechange:zs` listener at the bottom of `app.js` —
+  extend it if you add another JS-rendered view.
+- **`#greeting` deliberately has no `data-i18n`.** `app.js` fills it with a
+  personalised time-of-day greeting; adding the attribute would let `applyI18n()`
+  overwrite it with the generic string.
+
+The chosen language lives in `localStorage` (`zs-lang`) — it is a per-browser
+display preference, deliberately not a DB column, so switching needs no round
+trip and no schema change. The initial value falls back to `navigator.language`
+and then to German.
 
 ## Database
 
@@ -143,7 +190,9 @@ requires a browser reload.
 
 ## Conventions
 
-- Everything in this repo — code, comments, docs, commit messages — is in **English**.
+- Everything in this repo — code, comments, docs, commit messages — is in
+  **English**. The only German lives in the `de` dictionary in `i18n.js`, where it
+  is data rather than code.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
 - `'use strict';` at the top of every server-side module.
 - Match the existing comment style: comments here explain *why* a thing is the way

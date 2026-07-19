@@ -14,6 +14,8 @@ encrypted password vault, in a single Node.js container.
 - **Password vault** — per-user AES-256-GCM encrypted credentials, keyed from the
   user's own password (the server cannot decrypt them without an active session)
 - **Themes & background** — light/dark per user, admin-uploadable background image
+- **German / English** — full UI in both languages, switchable at any time from
+  the topbar or Settings (also available on the login page)
 
 ## Tech stack
 
@@ -65,6 +67,17 @@ automatically on first start.
 
 The frontend has no build step — editing anything in `src/public/` just needs a
 browser reload.
+
+### Adding or changing UI text
+
+The UI is bilingual. Every user-facing string lives in `src/public/i18n.js`, in
+both a `de` and an `en` dictionary. Markup references keys via `data-i18n`
+(and `data-i18n-ph` / `-title` / `-aria` / `-alt`); JavaScript calls `t('key')`.
+Server error responses carry a stable `code` that the client maps to an `err.*`
+key, so messages translate without the server knowing the user's language.
+
+Never hardcode a user-facing string — add it to both dictionaries instead.
+See [`CLAUDE.md`](CLAUDE.md) for the full contract.
 
 ## Configuration
 

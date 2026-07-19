@@ -14,6 +14,11 @@ form.addEventListener('submit', async (e) => {
   btn.textContent = '…';
   errorMsg.classList.remove('visible');
 
+  const resetButton = () => {
+    btn.disabled = false;
+    btn.textContent = t('login.submit');
+  };
+
   try {
     const res = await fetch('/api/login', {
       method: 'POST',
@@ -24,17 +29,22 @@ form.addEventListener('submit', async (e) => {
       window.location.href = '/';
     } else {
       const data = await res.json().catch(() => ({}));
-      errorMsg.textContent = data.error || 'Ungültige Zugangsdaten';
+      errorMsg.textContent = I18N.tError(data, 'login.invalid');
       errorMsg.classList.add('visible');
-      btn.disabled = false;
-      btn.textContent = 'Anmelden';
+      resetButton();
       document.getElementById('password').value = '';
       document.getElementById('password').focus();
     }
   } catch {
-    errorMsg.textContent = 'Server nicht erreichbar';
+    errorMsg.textContent = t('common.serverUnreachable');
     errorMsg.classList.add('visible');
-    btn.disabled = false;
-    btn.textContent = 'Anmelden';
+    resetButton();
   }
+});
+
+// The error line carries data-i18n, so a language switch while an error is
+// visible would overwrite a specific message ("wrong password") with the
+// generic default. Re-hide it instead — the next attempt fills it in again.
+window.addEventListener('languagechange:zs', () => {
+  errorMsg.classList.remove('visible');
 });

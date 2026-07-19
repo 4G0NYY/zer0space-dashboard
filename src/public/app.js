@@ -231,24 +231,24 @@ bgDropZone.addEventListener('drop', e => {
 
 async function uploadBackground(file) {
   if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
-    showBgMsg('Nur JPG, PNG oder WebP.', 'error'); return;
+    showBgMsg(t('bg.badType'), 'error'); return;
   }
-  if (file.size > 10*1024*1024) { showBgMsg('Max. 10 MB.', 'error'); return; }
+  if (file.size > 10*1024*1024) { showBgMsg(t('bg.maxSize'), 'error'); return; }
   const form = new FormData(); form.append('image', file);
   const res = await fetch('/api/background', { method: 'POST', body: form });
-  if (!res.ok) { const d=await res.json().catch(()=>({})); showBgMsg(d.error||'Upload fehlgeschlagen.','error'); return; }
+  if (!res.ok) { const d=await res.json().catch(()=>({})); showBgMsg(I18N.tError(d,'bg.uploadFailed'),'error'); return; }
   bgPreviewImg.src = URL.createObjectURL(file);
   bgDropZone.style.display = 'none'; bgPreview.classList.add('visible');
   bgImage.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.44),rgba(0,0,0,0.44)),url('/api/background?t=${Date.now()}')`;
   applyBgMode('image', true);
-  showBgMsg('Hintergrundbild gespeichert.', 'ok');
+  showBgMsg(t('bg.saved'), 'ok');
 }
 
 document.getElementById('bgRemoveBtn').addEventListener('click', async () => {
   await fetch('/api/background', { method: 'DELETE' }).catch(() => {});
   bgImage.style.backgroundImage = '';
   bgPreview.classList.remove('visible'); bgDropZone.style.display = '';
-  applyBgMode('generativ'); showBgMsg('Bild entfernt.', 'ok');
+  applyBgMode('generativ'); showBgMsg(t('bg.removed'), 'ok');
 });
 
 function showBgMsg(text, type) {
@@ -317,7 +317,7 @@ async function loadStatus() {
     const el = document.getElementById('clusterHealth');
     if (!el.dataset.live) {
       const healthy = (d.nodesOnline??0) > 0;
-      setTextAnimated(el, healthy ? 'Gesund' : 'Prüfen'); el.style.color = healthy?'var(--green)':'var(--red)';
+      setTextAnimated(el, healthy ? t('home.healthy') : t('home.checking')); el.style.color = healthy?'var(--green)':'var(--red)';
     }
   } catch {
     document.getElementById('servicesActive').textContent = '?';
@@ -505,8 +505,8 @@ function buildCard(s) {
   const dotClass = s.status==='running'?'dot-green':(s.status==='stopped'||s.status==='error')?'dot-red':'dot-gray';
   el.innerHTML = `
     <div class="card-actions">
-      <button class="card-edit" aria-label="${esc(s.name)} bearbeiten"><i class="ti ti-pencil"></i></button>
-      <button class="card-delete" aria-label="${esc(s.name)} entfernen"><i class="ti ti-trash"></i></button>
+      <button class="card-edit" aria-label="${esc(t('svc.editAria', { name: s.name }))}"><i class="ti ti-pencil"></i></button>
+      <button class="card-delete" aria-label="${esc(t('svc.removeAria', { name: s.name }))}"><i class="ti ti-trash"></i></button>
     </div>
     <div class="card-icon"><i class="ti ti-${esc(s.icon||'layout-dashboard')}"></i></div>
     <div>
@@ -523,7 +523,7 @@ function buildCard(s) {
   });
   el.querySelector('.card-delete').addEventListener('click', async e=>{
     e.stopPropagation();
-    if(!confirm(`„${s.name}" entfernen?`)) return;
+    if(!confirm(t('common.confirmRemove', { name: s.name }))) return;
     await fetch(`/api/services/${s.id}`,{method:'DELETE'}); loadServices();
   });
   return el;
@@ -573,8 +573,8 @@ let editingServiceId = null;
 // object (from the card's pencil icon) → edit mode, form pre-filled.
 function openModal(service) {
   editingServiceId = service ? service.id : null;
-  document.getElementById('serviceModalTitle').textContent = service ? 'Dienst bearbeiten' : 'Dienst hinzufügen';
-  document.getElementById('serviceSaveBtn').textContent    = service ? 'Speichern' : 'Hinzufügen';
+  document.getElementById('serviceModalTitle').textContent = service ? t('svc.edit') : t('svc.add');
+  document.getElementById('serviceSaveBtn').textContent    = service ? t('svc.submitSave') : t('svc.submitAdd');
   document.getElementById('f-name').value = service ? service.name        : '';
   document.getElementById('f-desc').value = service ? service.description : '';
   document.getElementById('f-url').value  = service ? service.url         : '';
@@ -616,16 +616,16 @@ document.getElementById('changePasswordForm').addEventListener('submit', async e
   const currentPassword=form.currentPassword.value, newPassword=form.newPassword.value, confirmPassword=form.confirmPassword.value;
   const btn=document.getElementById('cpSubmitBtn'), msg=document.getElementById('cpMsg');
   msg.textContent=''; msg.className='settings-msg';
-  if(newPassword!==confirmPassword){msg.textContent='Passwörter stimmen nicht überein.';msg.className='settings-msg error';return;}
-  if(newPassword.length<8){msg.textContent='Mindestens 8 Zeichen.';msg.className='settings-msg error';return;}
+  if(newPassword!==confirmPassword){msg.textContent=t('settings.pwMismatch');msg.className='settings-msg error';return;}
+  if(newPassword.length<8){msg.textContent=t('users.pwMin8');msg.className='settings-msg error';return;}
   btn.disabled=true; btn.textContent='…';
   try {
     const res=await fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword,newPassword})});
     const data=await res.json().catch(()=>({}));
-    if(res.ok){msg.textContent='Passwort erfolgreich geändert.';msg.className='settings-msg ok';form.reset();}
-    else{msg.textContent=data.error||'Fehler.';msg.className='settings-msg error';}
-  } catch { msg.textContent='Server nicht erreichbar.'; msg.className='settings-msg error'; }
-  btn.disabled=false; btn.textContent='Passwort speichern';
+    if(res.ok){msg.textContent=t('settings.pwChanged');msg.className='settings-msg ok';form.reset();}
+    else{msg.textContent=I18N.tError(data);msg.className='settings-msg error';}
+  } catch { msg.textContent=t('common.serverUnreachable'); msg.className='settings-msg error'; }
+  btn.disabled=false; btn.textContent=t('settings.savePassword');
 });
 
 // ================================================================
@@ -644,17 +644,17 @@ function buildUserRow(u) {
   const row = document.createElement('div');
   row.className='user-row'; row.id=`user-row-${u.id}`;
   row.innerHTML=`
-    <span class="user-row-name">${esc(u.username)}${isSelf?'<span class="you-badge">(du)</span>':''}</span>
+    <span class="user-row-name">${esc(u.username)}${isSelf?`<span class="you-badge">${esc(t('users.you'))}</span>`:''}</span>
     <span class="role-badge ${u.role}">${u.role}</span>
     <div class="user-row-actions">
-      <button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="toggle-reset">Passwort</button>
+      <button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="toggle-reset">${esc(t('users.resetPassword'))}</button>
       <button class="btn-sm" data-id="${u.id}" data-action="toggle-role">${u.role==='admin'?'→ Viewer':'→ Admin'}</button>
-      <button class="btn-sm btn-sm-danger" data-id="${u.id}" data-action="delete-user"${isSelf?' disabled title="Eigenen Account nicht löschbar"':''}>Löschen</button>
+      <button class="btn-sm btn-sm-danger" data-id="${u.id}" data-action="delete-user"${isSelf?` disabled title="${esc(t('users.cannotDeleteSelf'))}"`:''}>${esc(t('common.delete'))}</button>
     </div>
     <div class="user-reset-form" id="reset-form-${u.id}" style="display:none">
-      <input type="password" class="reset-pw-input" placeholder="Neues Passwort (min. 8 Zeichen)">
-      <button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="confirm-reset">Übernehmen</button>
-      <button class="btn-sm" data-id="${u.id}" data-action="cancel-reset">Abbrechen</button>
+      <input type="password" class="reset-pw-input" placeholder="${esc(t('users.newPasswordPlaceholder'))}">
+      <button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="confirm-reset">${esc(t('common.apply'))}</button>
+      <button class="btn-sm" data-id="${u.id}" data-action="cancel-reset">${esc(t('common.cancel'))}</button>
     </div>`;
   return row;
 }
@@ -674,30 +674,30 @@ document.getElementById('userList').addEventListener('click', async e=>{
   if (action==='confirm-reset') {
     const f=document.getElementById(`reset-form-${id}`);
     const pw=f.querySelector('.reset-pw-input').value;
-    if(!pw||pw.length<8){alert('Passwort mind. 8 Zeichen');return;}
+    if(!pw||pw.length<8){alert(t('users.pwMin8'));return;}
     btn.disabled=true;
     const res=await fetch(`/api/users/${id}/password`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
     btn.disabled=false;
     if(res.ok){f.style.display='none';f.querySelector('.reset-pw-input').value='';}
-    else{const d=await res.json().catch(()=>({}));alert(d.error||'Fehler');}
+    else{const d=await res.json().catch(()=>({}));alert(I18N.tError(d));}
   }
   if (action==='toggle-role') {
     const badge=document.getElementById(`user-row-${id}`).querySelector('.role-badge');
     const newRole=badge.textContent==='admin'?'viewer':'admin';
-    if(!confirm(`Rolle zu „${newRole}" ändern?`)) return;
+    if(!confirm(t('users.confirmRole', { role: newRole }))) return;
     btn.disabled=true;
     const res=await fetch(`/api/users/${id}/role`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:newRole})});
     btn.disabled=false;
     if(res.ok) loadUsers();
-    else{const d=await res.json().catch(()=>({}));alert(d.error||'Fehler');}
+    else{const d=await res.json().catch(()=>({}));alert(I18N.tError(d));}
   }
   if (action==='delete-user') {
-    if(!confirm('Benutzer wirklich löschen?')) return;
+    if(!confirm(t('users.confirmDelete'))) return;
     btn.disabled=true;
     const res=await fetch(`/api/users/${id}`,{method:'DELETE'});
     btn.disabled=false;
     if(res.ok) loadUsers();
-    else{const d=await res.json().catch(()=>({}));alert(d.error||'Fehler');}
+    else{const d=await res.json().catch(()=>({}));alert(I18N.tError(d));}
   }
 });
 
@@ -706,18 +706,18 @@ document.getElementById('addUserForm').addEventListener('submit', async e=>{
   const form=e.target, body=Object.fromEntries(new FormData(form));
   const btn=document.getElementById('addUserBtn'), msg=document.getElementById('addUserMsg');
   msg.textContent=''; msg.className='settings-msg';
-  if(!body.username?.trim()){msg.textContent='Benutzername fehlt';msg.className='settings-msg error';return;}
-  if(!body.password||body.password.length<8){msg.textContent='Passwort mind. 8 Zeichen';msg.className='settings-msg error';return;}
+  if(!body.username?.trim()){msg.textContent=t('users.usernameMissing');msg.className='settings-msg error';return;}
+  if(!body.password||body.password.length<8){msg.textContent=t('users.pwMin8');msg.className='settings-msg error';return;}
   btn.disabled=true;
   const res=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:body.username.trim(),password:body.password,role:body.role})});
   const data=await res.json().catch(()=>({}));
-  if(res.ok){msg.textContent=`Benutzer „${body.username.trim()}" angelegt.`;msg.className='settings-msg ok';form.reset();loadUsers();}
-  else{msg.textContent=data.error||'Fehler';msg.className='settings-msg error';}
+  if(res.ok){msg.textContent=t('users.created', { name: body.username.trim() });msg.className='settings-msg ok';form.reset();loadUsers();}
+  else{msg.textContent=I18N.tError(data);msg.className='settings-msg error';}
   btn.disabled=false;
 });
 
 // ================================================================
-// Vault (nativer Passwortmanager)
+// Vault (native password manager)
 // ================================================================
 
 let vaultEntries  = [];
@@ -766,7 +766,7 @@ async function loadVault() {
     renderVaultList(vaultEntries);
   } catch {
     document.getElementById('vaultList').innerHTML =
-      '<div class="vault-empty">Vault konnte nicht geladen werden.</div>';
+      `<div class="vault-empty">${esc(t('vault.loadFailed'))}</div>`;
   }
 }
 
@@ -774,7 +774,7 @@ function renderVaultList(list) {
   const listEl = document.getElementById('vaultList');
   listEl.innerHTML = '';
   if (list.length === 0) {
-    listEl.innerHTML = '<div class="vault-empty">Noch keine Einträge — leg deinen ersten mit „Eintrag hinzufügen" an.</div>';
+    listEl.innerHTML = `<div class="vault-empty">${esc(t('vault.empty'))}</div>`;
     return;
   }
   list.forEach((e, i) => {
@@ -796,12 +796,12 @@ function vaultEntryRow(e) {
     </div>
     <div class="vault-entry-pw">
       <span class="vault-entry-pw-value masked" data-revealed="0">••••••••</span>
-      <button type="button" class="btn-icon vault-pw-eye" aria-label="Passwort anzeigen"><i class="ti ti-eye"></i></button>
+      <button type="button" class="btn-icon vault-pw-eye" aria-label="${esc(t('vault.showPassword'))}"><i class="ti ti-eye"></i></button>
     </div>
-    ${e.undecryptable ? '<span class="vault-undecryptable" title="Konnte nicht entschlüsselt werden — Passwort wurde per Admin-Reset geändert"><i class="ti ti-alert-triangle"></i></span>' : ''}
+    ${e.undecryptable ? `<span class="vault-undecryptable" title="${esc(t('vault.undecryptable'))}"><i class="ti ti-alert-triangle"></i></span>` : ''}
     <div class="vault-entry-actions">
-      <button type="button" class="btn-icon vault-edit" aria-label="Bearbeiten"><i class="ti ti-pencil"></i></button>
-      <button type="button" class="btn-icon vault-delete" aria-label="Löschen"><i class="ti ti-trash"></i></button>
+      <button type="button" class="btn-icon vault-edit" aria-label="${esc(t('common.edit'))}"><i class="ti ti-pencil"></i></button>
+      <button type="button" class="btn-icon vault-delete" aria-label="${esc(t('common.delete'))}"><i class="ti ti-trash"></i></button>
     </div>`;
 
   const pwEl = el.querySelector('.vault-entry-pw-value');
@@ -826,7 +826,7 @@ document.getElementById('vaultSearchInput')?.addEventListener('input', e => {
 });
 
 async function deleteVaultEntry(id, title) {
-  if (!confirm(`„${title}" wirklich löschen?`)) return;
+  if (!confirm(t('common.confirmDelete', { name: title }))) return;
   try {
     const res = await vaultFetch(`/api/vault/${id}`, { method: 'DELETE' });
     if (res.ok) await loadVault();
@@ -840,7 +840,7 @@ const vaultEntryForm    = document.getElementById('vaultEntryForm');
 
 function openVaultModal(entry) {
   vaultEditingId = entry ? entry.id : null;
-  document.getElementById('vaultModalTitle').textContent = entry ? 'Eintrag bearbeiten' : 'Eintrag hinzufügen';
+  document.getElementById('vaultModalTitle').textContent = entry ? t('vault.editEntry') : t('vault.addEntry');
   document.getElementById('v-title').value    = entry ? entry.title    : '';
   document.getElementById('v-username').value = entry ? entry.username : '';
   document.getElementById('v-password').value = entry ? (entry.password ?? '') : '';
@@ -887,7 +887,7 @@ vaultEntryForm.addEventListener('submit', async e => {
     url:      document.getElementById('v-url').value,
     notes:    document.getElementById('v-notes').value,
   };
-  if (!body.title.trim()) { msg.textContent = 'Titel fehlt'; msg.className = 'settings-msg error'; return; }
+  if (!body.title.trim()) { msg.textContent = t('vault.titleMissing'); msg.className = 'settings-msg error'; return; }
 
   btn.disabled = true;
   try {
@@ -896,13 +896,13 @@ vaultEntryForm.addEventListener('submit', async e => {
     const res  = await vaultFetch(url, { method, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      msg.textContent = data.error || 'Fehler beim Speichern'; msg.className = 'settings-msg error';
+      msg.textContent = I18N.tError(data, 'vault.saveFailed'); msg.className = 'settings-msg error';
     } else {
       closeVaultModal();
       await loadVault();
     }
   } catch {
-    msg.textContent = 'Server nicht erreichbar'; msg.className = 'settings-msg error';
+    msg.textContent = t('common.serverUnreachable'); msg.className = 'settings-msg error';
   }
   btn.disabled = false;
 });
@@ -1009,6 +1009,36 @@ document.getElementById('backupCard')?.addEventListener('click', () => {
 // Init
 // ================================================================
 
+// Greeting — uses the verified session username, never a hardcoded fallback.
+// Split out of init() so a language switch can re-render it: both the
+// salutation and the long-form date are language-dependent.
+function renderGreeting() {
+  const h = new Date().getHours();
+  const salutation =
+    h >= 5  && h < 12 ? t('greet.morning')   :
+    h >= 12 && h < 18 ? t('greet.afternoon') :
+    h >= 18 && h < 22 ? t('greet.evening')   :
+                        t('greet.night');
+  document.getElementById('greeting').textContent =
+    `${salutation}, ${selfUsername || t('greet.fallbackUser')}`;
+  document.getElementById('greetingDate').textContent =
+    new Date().toLocaleDateString(t('locale'), { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+
+// Views whose markup is built in JavaScript carry no data-i18n attributes, so
+// applyI18n() cannot reach them. Re-render them explicitly when the language
+// changes — but only the view actually on screen, so switching language does
+// not fire requests for panels the user cannot see. The others re-render
+// anyway when navigated to, because switchView() reloads them.
+window.addEventListener('languagechange:zs', () => {
+  const active = id => document.getElementById(id)?.classList.contains('active');
+  renderGreeting();
+  if (active('view-home')) { loadStatus(); loadServices(); loadBackupStatus(); }
+  if (active('view-einstellungen') && userRole === 'admin') loadUsers();
+  // Skipped while locked: loadVault() would only re-trigger the 403 path.
+  if (active('view-vault') && vaultUnlocked) loadVault();
+});
+
 (async function init() {
   // Verify the session before loading anything else.
   // Cloudflare Access alone does not create a dashboard session —
@@ -1028,12 +1058,7 @@ document.getElementById('backupCard')?.addEventListener('click', () => {
   vaultUnlocked = Boolean(me.vaultUnlocked);
   if (userRole === 'admin') document.body.classList.add('is-admin');
 
-  // Greeting — uses the verified session username, never a hardcoded fallback.
-  const h = new Date().getHours();
-  const salutation = h>=5&&h<12?'Guten Morgen':h>=12&&h<18?'Guten Nachmittag':h>=18&&h<22?'Guten Abend':'Gute Nacht';
-  document.getElementById('greeting').textContent = `${salutation}, ${selfUsername || 'Nutzer'}`;
-  document.getElementById('greetingDate').textContent =
-    new Date().toLocaleDateString('de-CH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  renderGreeting();
   const av = document.getElementById('userAvatar');
   if (av) { av.textContent = (selfUsername || '?')[0].toUpperCase(); av.title = selfUsername; }
 

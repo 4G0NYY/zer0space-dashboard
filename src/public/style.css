@@ -223,6 +223,48 @@ body::after {
   to   { opacity: 1; transform: scale(1); }
 }
 
+/* ---- Language Toggle (DE / EN) ---- */
+.lang-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+}
+.lang-btn {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.lang-btn:hover { color: var(--text-1); }
+.lang-btn.active { background: var(--accent-bg); color: var(--accent); }
+
+/* In the topbar the toggle takes over the avatar's right-alignment so the two
+   sit together at the far right instead of being pushed apart. */
+.topbar .lang-toggle { margin-left: auto; }
+.topbar .lang-toggle + .avatar { margin-left: 10px; }
+
+/* Larger variant for the settings page, where there is room for full words. */
+.lang-toggle-lg { margin-bottom: 10px; }
+.lang-toggle-lg .lang-btn { padding: 8px 18px; font-size: 14px; font-weight: 500; }
+
+/* Login page: centred under the form. */
+.lang-toggle-login {
+  display: flex;
+  width: fit-content;
+  margin: 22px auto 0;
+}
+
 /* ---- Shared buttons ---- */
 .btn-icon {
   color: var(--text-2);
@@ -1001,6 +1043,8 @@ a.btn-primary:active, a.btn-secondary:active { transform: scale(0.97); }
   .greeting h1 { font-size: 22px; }
   .theme-grid { grid-template-columns: repeat(4, 1fr); }
   .bg-mode-toggle { flex-direction: column; }
+  /* Topbar is tight on phones — the toggle stays reachable in Settings. */
+  .topbar .lang-toggle { display: none; }
 }
 
 /* ---- Roles & Admin-only visibility ---- */

@@ -176,9 +176,9 @@
     <div class="logo">
       <div class="logo-mark">
         <!--
-          Logo: schwarzes abgerundetes Rechteck, weisse "0" zentriert,
-          4-zackige Sterne in allen vier Ecken (SVG-Pfad, mathematisch korrekt:
-          R=3.5 Aussenradius, r=1.3 Innenradius, 8 Punkte abwechselnd)
+          Logo: black rounded rectangle, white "0" centred, four-pointed stars
+          in all four corners (SVG path, mathematically exact: R=3.5 outer
+          radius, r=1.3 inner radius, 8 points alternating)
         -->
         <svg width="56" height="56" viewBox="0 0 56 56" fill="none"
              xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -195,36 +195,43 @@
           <!-- Unten-rechts -->
           <path d="M47 43.5 L47.9 46.1 L50.5 47 L47.9 47.9 L47 50.5 L46.1 47.9 L43.5 47 L46.1 46.1 Z"
                 fill="rgba(255,255,255,0.45)"/>
-          <!-- "0" vertikal und horizontal zentriert -->
+          <!-- "0" centred vertically and horizontally -->
           <text x="28" y="28" text-anchor="middle" dominant-baseline="central"
                 font-family="-apple-system,'SF Pro Display','Helvetica Neue',Arial,sans-serif"
                 font-size="28" font-weight="700" fill="white" letter-spacing="-1">0</text>
         </svg>
       </div>
       <h1>zer0space</h1>
-      <p>Homelab Dashboard</p>
+      <p data-i18n="login.subtitle">Homelab Dashboard</p>
     </div>
 
     <form id="loginForm" novalidate>
       <div class="form-group">
-        <label for="username">Benutzername</label>
+        <label for="username" data-i18n="login.username">Benutzername</label>
         <input id="username" name="username" type="text" autocomplete="username"
                placeholder="admin" required autofocus>
       </div>
       <div class="form-group">
-        <label for="password">Passwort</label>
+        <label for="password" data-i18n="login.password">Passwort</label>
         <input id="password" name="password" type="password" autocomplete="current-password"
                placeholder="••••••••" required>
       </div>
-      <button type="submit" class="btn" id="submitBtn">Anmelden</button>
-      <div class="error-msg" id="errorMsg">Ungültige Zugangsdaten</div>
+      <button type="submit" class="btn" id="submitBtn" data-i18n="login.submit">Anmelden</button>
+      <div class="error-msg" id="errorMsg" data-i18n="login.invalid">Ungültige Zugangsdaten</div>
     </form>
+
+    <!-- Language toggle, also available before signing in -->
+    <div class="lang-toggle lang-toggle-login" role="group" data-i18n-aria="top.language">
+      <button type="button" class="lang-btn" data-lang="de">DE</button>
+      <button type="button" class="lang-btn" data-lang="en">EN</button>
+    </div>
   </div>
 
+  <script src="/i18n.js"></script>
   <script src="/login.js"></script>
   <script>
-    /* Starfield — Sterne driften langsam über den Bildschirm (statt nur zu
-       flackern) und gelegentlich zieht eine Sternschnuppe durchs Bild. */
+    /* Starfield — stars drift slowly across the screen (rather than merely
+       flickering) and now and then a shooting star crosses the view. */
     (function () {
       const canvas = document.getElementById('star-canvas');
       const ctx    = canvas.getContext('2d');

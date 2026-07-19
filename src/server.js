@@ -193,7 +193,7 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 // dashboard must stay at replicas: 1 and a restart logs everyone out.
 let sessionMiddleware = null;
 app.use((req, res, next) => {
-  if (!sessionMiddleware) return res.status(503).json({ error: 'Server startet noch' });
+  if (!sessionMiddleware) return res.status(503).json({ error: 'Server is still starting', code: 'STARTING' });
   return sessionMiddleware(req, res, next);
 });
 
@@ -201,13 +201,13 @@ app.use((req, res, next) => {
 
 function requireAuth(req, res, next) {
   if (req.session?.userId) return next();
-  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not signed in', code: 'UNAUTHORIZED' });
   res.redirect('/login');
 }
 
 function requireAdmin(req, res, next) {
   if (req.session?.role !== 'admin')
-    return res.status(403).json({ error: 'Keine Berechtigung (Admin erforderlich)' });
+    return res.status(403).json({ error: 'Not permitted (admin required)', code: 'FORBIDDEN_ADMIN' });
   next();
 }
 
@@ -223,7 +223,7 @@ app.get('/login', (req, res) => {
 
 app.post('/api/login', ah(async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Eingabe fehlt' });
+  if (!username || !password) return res.status(400).json({ error: 'Input missing', code: 'INPUT_MISSING' });
 
   const key = getRateKey(req, username);
   const rate = checkRateLimit(key);
@@ -235,7 +235,7 @@ app.post('/api/login', ah(async (req, res) => {
   const user = await db.one('SELECT * FROM users WHERE username = $1', [username]);
   if (!user || !bcrypt.compareSync(password, user.hash)) {
     recordFailure(key);
-    return res.status(401).json({ error: 'Benutzername oder Passwort falsch' });
+    return res.status(401).json({ error: 'Wrong username or password', code: 'BAD_CREDENTIALS' });
   }
 
   clearFailures(key);
@@ -287,11 +287,11 @@ app.get('/api/me', ah(async (req, res) => {
 
 app.post('/api/change-password', ah(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Felder fehlen' });
-  if (newPassword.length < 8) return res.status(400).json({ error: 'Passwort muss mindestens 8 Zeichen haben' });
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Fields missing', code: 'FIELDS_MISSING' });
+  if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
   const user = await db.one('SELECT * FROM users WHERE id = $1', [req.session.userId]);
   if (!user || !bcrypt.compareSync(currentPassword, user.hash))
-    return res.status(401).json({ error: 'Aktuelles Passwort falsch' });
+    return res.status(401).json({ error: 'Current password is wrong', code: 'PW_CURRENT_WRONG' });
 
   // Self-service password change is the ONE place we still hold both the old
   // and the new plaintext password in the same request, so the vault can be
@@ -334,7 +334,7 @@ app.post('/api/change-password', ah(async (req, res) => {
 // Save own theme preference (any authenticated user)
 app.put('/api/user/theme', ah(async (req, res) => {
   const { theme } = req.body || {};
-  if (!theme) return res.status(400).json({ error: 'theme required' });
+  if (!theme) return res.status(400).json({ error: 'Theme required', code: 'THEME_REQUIRED' });
   await db.query('UPDATE users SET theme = $1 WHERE id = $2', [theme, req.session.userId]);
   res.json({ ok: true });
 }));
@@ -377,7 +377,7 @@ app.get('/api/status', async (_req, res) => {
     }));
     res.json({ nodesOnline, servicesActive: services.length, serviceStatus });
   } catch {
-    res.status(503).json({ error: 'proxy unavailable' });
+    res.status(503).json({ error: 'Docker proxy unavailable', code: 'PROXY_UNAVAILABLE' });
   }
 });
 
@@ -385,7 +385,7 @@ app.get('/api/status', async (_req, res) => {
 
 app.put('/api/settings', requireAdmin, ah(async (req, res) => {
   const { key, value } = req.body || {};
-  if (!key || value === undefined) return res.status(400).json({ error: 'key + value required' });
+  if (!key || value === undefined) return res.status(400).json({ error: 'Key and value required', code: 'KEY_VALUE_REQUIRED' });
   await db.query(
     `INSERT INTO settings (key, value) VALUES ($1, $2)
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
@@ -418,7 +418,7 @@ app.post('/api/services', requireAdmin, ah(async (req, res) => {
 
 app.put('/api/services/:id', requireAdmin, ah(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
   const { name, description = '', url = '', icon = 'layout-dashboard', status = 'unknown' } = req.body ?? {};
   const err = validateServiceInput({ name, description, url, icon });
   if (err) return res.status(400).json({ error: err });
@@ -427,19 +427,19 @@ app.put('/api/services/:id', requireAdmin, ah(async (req, res) => {
      WHERE id = $6 RETURNING *`,
     [name.trim(), description.trim(), url.trim(), icon.trim() || 'layout-dashboard', status, id]
   );
-  if (!row) return res.status(404).json({ error: 'Dienst nicht gefunden' });
+  if (!row) return res.status(404).json({ error: 'Service not found', code: 'SERVICE_NOT_FOUND' });
   res.json(row);
 }));
 
 app.delete('/api/services/:id', requireAdmin, ah(async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
   await db.query('DELETE FROM services WHERE id = $1', [id]);
   res.sendStatus(204);
 }));
 
 app.post('/api/background', requireAdmin, bgUpload.single('image'), ah(async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei oder ungültiger Typ (JPG/PNG/WebP)' });
+  if (!req.file) return res.status(400).json({ error: 'No file or invalid type (JPG/PNG/WebP)', code: 'BAD_UPLOAD' });
   const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
   const ext  = extMap[req.file.mimetype] || 'jpg';
   const dest = path.join(BG_DIR, `background.${ext}`);
@@ -449,7 +449,7 @@ app.post('/api/background', requireAdmin, bgUpload.single('image'), ah(async (re
   });
   try { fs.renameSync(req.file.path, dest); } catch {
     fs.unlinkSync(req.file.path);
-    return res.status(500).json({ error: 'Speicherfehler' });
+    return res.status(500).json({ error: 'Storage error', code: 'STORAGE_ERROR' });
   }
   await db.query(
     `INSERT INTO settings (key, value) VALUES ('bg_mode', 'image')
@@ -481,9 +481,9 @@ app.get('/api/users', requireAdmin, ah(async (_req, res) => {
 
 app.post('/api/users', requireAdmin, ah(async (req, res) => {
   const { username, password, role } = req.body || {};
-  if (!username?.trim() || !password) return res.status(400).json({ error: 'Felder fehlen' });
-  if (password.length < 8) return res.status(400).json({ error: 'Passwort mind. 8 Zeichen' });
-  if (!['admin', 'viewer'].includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
+  if (!username?.trim() || !password) return res.status(400).json({ error: 'Fields missing', code: 'FIELDS_MISSING' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
+  if (!['admin', 'viewer'].includes(role)) return res.status(400).json({ error: 'Invalid role', code: 'INVALID_ROLE' });
   // ON CONFLICT instead of a SELECT-then-INSERT: the UNIQUE index decides, so two
   // concurrent requests for the same name can't both get past a pre-check.
   const row = await db.one(
@@ -492,15 +492,15 @@ app.post('/api/users', requireAdmin, ah(async (req, res) => {
      RETURNING id, username, role`,
     [username.trim(), bcrypt.hashSync(password, 12), role]
   );
-  if (!row) return res.status(409).json({ error: 'Benutzername bereits vergeben' });
+  if (!row) return res.status(409).json({ error: 'Username already taken', code: 'USERNAME_TAKEN' });
   res.status(201).json(row);
 }));
 
 app.put('/api/users/:id/password', requireAdmin, ah(async (req, res) => {
   const id = Number(req.params.id);
   const { password } = req.body || {};
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
-  if (!password || password.length < 8) return res.status(400).json({ error: 'Passwort mind. 8 Zeichen' });
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
 
   // Admin-forced reset: the admin never has the target user's OLD plaintext
   // password, so their vault key can't be re-derived and the existing vault
@@ -516,15 +516,15 @@ app.put('/api/users/:id/password', requireAdmin, ah(async (req, res) => {
     );
     return true;
   });
-  if (!updated) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  if (!updated) return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
   res.json({ ok: true, vaultWiped: true });
 }));
 
 app.put('/api/users/:id/role', requireAdmin, ah(async (req, res) => {
   const id = Number(req.params.id);
   const { role } = req.body || {};
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
-  if (!['admin', 'viewer'].includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
+  if (!['admin', 'viewer'].includes(role)) return res.status(400).json({ error: 'Invalid role', code: 'INVALID_ROLE' });
 
   // The last-admin check and the update must be atomic — otherwise two parallel
   // demotions could both pass the check and leave the system without an admin.
@@ -538,16 +538,16 @@ app.put('/api/users/:id/role', requireAdmin, ah(async (req, res) => {
     await client.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
     return 'ok';
   });
-  if (result === 'notfound')  return res.status(404).json({ error: 'Benutzer nicht gefunden' });
-  if (result === 'lastadmin') return res.status(400).json({ error: 'Letzten Admin nicht herabstufbar' });
+  if (result === 'notfound')  return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+  if (result === 'lastadmin') return res.status(400).json({ error: 'The last admin cannot be demoted', code: 'LAST_ADMIN_DEMOTE' });
   res.json({ ok: true });
 }));
 
 app.delete('/api/users/:id', requireAdmin, ah(async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'invalid id' });
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
   if (id === req.session.userId)
-    return res.status(400).json({ error: 'Eigenen Account nicht löschbar' });
+    return res.status(400).json({ error: 'You cannot delete your own account', code: 'SELF_DELETE' });
 
   const result = await db.tx(async (client) => {
     const { rows } = await client.query('SELECT role FROM users WHERE id = $1 FOR UPDATE', [id]);
@@ -561,8 +561,8 @@ app.delete('/api/users/:id', requireAdmin, ah(async (req, res) => {
     await client.query('DELETE FROM users WHERE id = $1', [id]);
     return 'ok';
   });
-  if (result === 'notfound')  return res.status(404).json({ error: 'Benutzer nicht gefunden' });
-  if (result === 'lastadmin') return res.status(400).json({ error: 'Letzter Admin nicht löschbar' });
+  if (result === 'notfound')  return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+  if (result === 'lastadmin') return res.status(400).json({ error: 'The last admin cannot be deleted', code: 'LAST_ADMIN_DELETE' });
   res.json({ ok: true });
 }));
 
@@ -620,7 +620,7 @@ app.get('/api/metrics', async (_req, res) => {
     swarmNodes   = await nodesRes.json();
     glancesTasks = await tasksRes.json();
   } catch {
-    return res.status(503).json({ nodes: [], error: 'proxy unavailable' });
+    return res.status(503).json({ nodes: [], error: 'Docker proxy unavailable', code: 'PROXY_UNAVAILABLE' });
   }
 
   // nodeID → { hostname, addr } — addr = node's management/LAN IP from Swarm
@@ -742,12 +742,12 @@ app.get('/api/backup', (_req, res) => {
 app.use((err, req, res, _next) => {
   if (db.isConnectionError(err)) {
     console.error(`[dashboard] DB unavailable on ${req.method} ${req.path}: ${err.message}`);
-    return res.status(503).json({ error: 'Datenbank nicht erreichbar — bitte spaeter erneut versuchen' });
+    return res.status(503).json({ error: 'Database unavailable — please try again later', code: 'DB_UNAVAILABLE' });
   }
   console.error(`[dashboard] error on ${req.method} ${req.path}: ${err.message}`);
   // err.message is deliberately NOT sent to the client (see docs/security.md).
   if (res.headersSent) return;
-  res.status(500).json({ error: 'Interner Fehler' });
+  res.status(500).json({ error: 'Internal error', code: 'INTERNAL' });
 });
 
 // ---- Startup ----

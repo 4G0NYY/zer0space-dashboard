@@ -19,44 +19,49 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <span class="wordmark">zer0space</span>
-        <button class="btn-icon" id="sidebarToggle" aria-label="Seitenleiste ein-/ausklappen">
+        <button class="btn-icon" id="sidebarToggle" data-i18n-aria="nav.toggleSidebar">
           <i class="ti ti-layout-sidebar-left-collapse"></i>
         </button>
       </div>
 
       <nav class="sidebar-nav">
         <a href="#" class="nav-item active" data-view="home">
-          <i class="ti ti-home"></i><span>Home</span>
+          <i class="ti ti-home"></i><span data-i18n="nav.home">Home</span>
         </a>
         <a href="#" class="nav-item" data-view="ki">
-          <i class="ti ti-brain"></i><span>KI</span>
+          <i class="ti ti-brain"></i><span data-i18n="nav.ai">KI</span>
         </a>
         <a href="#" class="nav-item" data-view="cloud">
-          <i class="ti ti-cloud"></i><span>Cloud</span>
+          <i class="ti ti-cloud"></i><span data-i18n="nav.cloud">Cloud</span>
         </a>
         <a href="#" class="nav-item" data-view="vault">
-          <i class="ti ti-lock-password"></i><span>Vault</span>
+          <i class="ti ti-lock-password"></i><span data-i18n="nav.vault">Vault</span>
         </a>
         <a href="#" class="nav-item" data-view="einstellungen">
-          <i class="ti ti-settings"></i><span>Einstellungen</span>
+          <i class="ti ti-settings"></i><span data-i18n="nav.settings">Einstellungen</span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
-        <button class="nav-item logout-btn" id="logoutBtn" aria-label="Abmelden">
-          <i class="ti ti-logout"></i><span>Abmelden</span>
+        <button class="nav-item logout-btn" id="logoutBtn" data-i18n-aria="nav.logout">
+          <i class="ti ti-logout"></i><span data-i18n="nav.logout">Abmelden</span>
         </button>
       </div>
     </aside>
 
     <div class="main">
       <header class="topbar">
-        <button class="btn-icon mobile-only" id="mobileSidebarToggle" aria-label="Menü">
+        <button class="btn-icon mobile-only" id="mobileSidebarToggle" data-i18n-aria="nav.menu">
           <i class="ti ti-menu-2"></i>
         </button>
         <div class="search-bar" id="searchBarWrap">
           <i class="ti ti-search"></i>
-          <input type="text" id="searchInput" placeholder="Dienste suchen …" autocomplete="off">
+          <input type="text" id="searchInput" data-i18n-ph="top.search" autocomplete="off">
+        </div>
+        <!-- Language toggle: switches the whole UI between German and English -->
+        <div class="lang-toggle" role="group" data-i18n-aria="top.language">
+          <button type="button" class="lang-btn" data-lang="de">DE</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
         </div>
         <div class="avatar" id="userAvatar" title=""></div>
       </header>
@@ -66,6 +71,8 @@
         <!-- HOME VIEW -->
         <div class="view active" id="view-home">
           <div class="greeting">
+            <!-- Filled by app.js with a time-of-day greeting + username.
+                 Deliberately no data-i18n: applyI18n() would overwrite it. -->
             <h1 id="greeting">Willkommen</h1>
             <p id="greetingDate"></p>
           </div>
@@ -75,29 +82,29 @@
               <div class="status-icon"><i class="ti ti-server"></i></div>
               <div>
                 <div class="status-value" id="nodesOnline">—</div>
-                <div class="status-label">Nodes online</div>
+                <div class="status-label" data-i18n="home.nodesOnline">Nodes online</div>
               </div>
             </div>
             <div class="status-card">
               <div class="status-icon"><i class="ti ti-stack-2"></i></div>
               <div>
                 <div class="status-value" id="servicesActive">—</div>
-                <div class="status-label">Swarm-Dienste</div>
+                <div class="status-label" data-i18n="home.swarmServices">Swarm-Dienste</div>
               </div>
             </div>
             <div class="status-card">
               <div class="status-icon"><i class="ti ti-heartbeat"></i></div>
               <div>
                 <div class="status-value" id="clusterHealth">—</div>
-                <div class="status-label">Cluster-Status</div>
+                <div class="status-label" data-i18n="home.clusterStatus">Cluster-Status</div>
               </div>
             </div>
-            <div class="status-card backup-card" id="backupCard" title="Klicken für Node-Details">
+            <div class="status-card backup-card" id="backupCard" data-i18n-title="home.nodeDetails">
               <div class="backup-card-main">
                 <div class="status-icon"><i class="ti ti-device-floppy"></i></div>
                 <div>
                   <div class="status-value backup-time" id="backupTime">—</div>
-                  <div class="status-label">Backup <span class="backup-expand-hint" id="backupExpandHint"></span></div>
+                  <div class="status-label"><span data-i18n="home.backup">Backup</span> <span class="backup-expand-hint" id="backupExpandHint"></span></div>
                 </div>
               </div>
               <div class="backup-detail" id="backupDetail"></div>
@@ -105,7 +112,7 @@
           </div>
 
           <div class="section-header">
-            <h2>Nodes</h2>
+            <h2 data-i18n="home.nodes">Nodes</h2>
           </div>
           <div class="node-grid" id="nodeGrid">
             <div class="node-skeleton"></div>
@@ -115,7 +122,7 @@
           </div>
 
           <div class="section-header" style="margin-top:32px">
-            <h2>Dienste</h2>
+            <h2 data-i18n="home.services">Dienste</h2>
           </div>
           <div class="services-grid" id="servicesGrid"></div>
         </div>
@@ -123,19 +130,19 @@
         <!-- KI VIEW -->
         <div class="view" id="view-ki">
           <div class="greeting">
-            <h1>KI-Assistent</h1>
-            <p>Vorbereitet für einen lokalen Sprachmodell-Chat</p>
+            <h1 data-i18n="ai.title">KI-Assistent</h1>
+            <p data-i18n="ai.subtitle">Vorbereitet für einen lokalen Sprachmodell-Chat</p>
           </div>
           <div class="placeholder-view">
             <div class="placeholder-icon"><i class="ti ti-brain"></i></div>
-            <h2>Kommt bald</h2>
-            <p>Hier entsteht ein Chat-Interface für lokale KI-Modelle (Ollama / Open-WebUI).</p>
+            <h2 data-i18n="common.comingSoon">Kommt bald</h2>
+            <p data-i18n="ai.body">Hier entsteht ein Chat-Interface für lokale KI-Modelle (Ollama / Open-WebUI).</p>
           </div>
           <!-- Chat layout prepared (hidden until integration) -->
           <div class="chat-layout" aria-hidden="true" style="display:none">
             <div class="chat-messages" id="chatMessages"></div>
             <div class="chat-input-bar">
-              <input type="text" placeholder="Nachricht eingeben …" disabled>
+              <input type="text" data-i18n-ph="ai.inputPlaceholder" disabled>
               <button class="btn-icon" disabled><i class="ti ti-send"></i></button>
             </div>
           </div>
@@ -144,120 +151,130 @@
         <!-- CLOUD VIEW -->
         <div class="view" id="view-cloud">
           <div class="greeting">
-            <h1>Cloud</h1>
+            <h1 data-i18n="cloud.title">Cloud</h1>
           </div>
           <div class="placeholder-view">
             <div class="placeholder-icon"><i class="ti ti-cloud"></i></div>
-            <h2>Kommt bald</h2>
-            <p>Cloudflare-Status und Tunnel-Übersicht werden hier erscheinen.</p>
+            <h2 data-i18n="common.comingSoon">Kommt bald</h2>
+            <p data-i18n="cloud.body">Cloudflare-Status und Tunnel-Übersicht werden hier erscheinen.</p>
           </div>
         </div>
 
-        <!-- VAULT VIEW (nativer Passwortmanager) -->
+        <!-- VAULT VIEW (native password manager) -->
         <div class="view" id="view-vault">
           <div class="greeting">
-            <h1>Vault</h1>
-            <p>Deine eigenen Zugangsdaten — Ende-zu-Ende nur für dich entschlüsselbar</p>
+            <h1 data-i18n="vault.title">Vault</h1>
+            <p data-i18n="vault.subtitle">Deine eigenen Zugangsdaten — Ende-zu-Ende nur für dich entschlüsselbar</p>
           </div>
 
           <div id="vaultLocked" class="placeholder-view" style="display:none">
             <div class="placeholder-icon"><i class="ti ti-lock-question"></i></div>
-            <h2>Vault gesperrt</h2>
-            <p>Deine Session wurde vor der Vault-Funktion erstellt oder dein Passwort wurde
+            <h2 data-i18n="vault.locked">Vault gesperrt</h2>
+            <p data-i18n="vault.lockedBody">Deine Session wurde vor der Vault-Funktion erstellt oder dein Passwort wurde
                zurückgesetzt. Bitte einmal ab- und wieder anmelden, um sie freizuschalten.</p>
           </div>
 
           <div id="vaultUnlockedArea">
             <div class="search-bar vault-search-bar" id="vaultSearchWrap">
               <i class="ti ti-search"></i>
-              <input type="text" id="vaultSearchInput" placeholder="Titel oder URL suchen …" autocomplete="off">
+              <input type="text" id="vaultSearchInput" data-i18n-ph="vault.search" autocomplete="off">
             </div>
 
             <div class="vault-list" id="vaultList"></div>
 
             <button type="button" class="btn-primary vault-add-btn" id="vaultAddBtn">
-              <i class="ti ti-plus"></i> Eintrag hinzufügen
+              <i class="ti ti-plus"></i> <span data-i18n="vault.addEntry">Eintrag hinzufügen</span>
             </button>
           </div>
         </div>
 
-        <!-- EINSTELLUNGEN VIEW -->
+        <!-- SETTINGS VIEW -->
         <div class="view" id="view-einstellungen">
           <div class="greeting">
-            <h1>Einstellungen</h1>
+            <h1 data-i18n="settings.title">Einstellungen</h1>
           </div>
 
-          <!-- Passwort -->
+          <!-- Password -->
           <div class="settings-section">
-            <h3 class="settings-heading">Passwort ändern</h3>
+            <h3 class="settings-heading" data-i18n="settings.changePassword">Passwort ändern</h3>
             <form class="settings-form" id="changePasswordForm" novalidate>
               <div class="form-group">
-                <label for="cp-current">Aktuelles Passwort</label>
+                <label for="cp-current" data-i18n="settings.currentPassword">Aktuelles Passwort</label>
                 <input id="cp-current" name="currentPassword" type="password" autocomplete="current-password" placeholder="••••••••">
               </div>
               <div class="form-group">
-                <label for="cp-new">Neues Passwort <span class="label-hint">(min. 8 Zeichen)</span></label>
+                <label for="cp-new"><span data-i18n="settings.newPassword">Neues Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 8 Zeichen)</span></label>
                 <input id="cp-new" name="newPassword" type="password" autocomplete="new-password" placeholder="••••••••">
               </div>
               <div class="form-group">
-                <label for="cp-confirm">Bestätigen</label>
+                <label for="cp-confirm" data-i18n="settings.confirmPassword">Bestätigen</label>
                 <input id="cp-confirm" name="confirmPassword" type="password" autocomplete="new-password" placeholder="••••••••">
               </div>
-              <button type="submit" class="btn-primary" id="cpSubmitBtn">Passwort speichern</button>
+              <button type="submit" class="btn-primary" id="cpSubmitBtn" data-i18n="settings.savePassword">Passwort speichern</button>
               <div class="settings-msg" id="cpMsg"></div>
             </form>
           </div>
 
-          <!-- Akzentfarbe -->
+          <!-- Language -->
           <div class="settings-section">
-            <h3 class="settings-heading">Akzentfarbe</h3>
+            <h3 class="settings-heading" data-i18n="settings.language">Sprache</h3>
+            <div class="lang-toggle lang-toggle-lg" role="group" data-i18n-aria="top.language">
+              <button type="button" class="lang-btn" data-lang="de">Deutsch</button>
+              <button type="button" class="lang-btn" data-lang="en">English</button>
+            </div>
+            <p class="color-picker-label" data-i18n="settings.languageHint">Gilt nur für diesen Browser.</p>
+          </div>
+
+          <!-- Accent colour -->
+          <div class="settings-section">
+            <h3 class="settings-heading" data-i18n="settings.accent">Akzentfarbe</h3>
             <div class="theme-grid" id="themeGrid">
               <button class="theme-swatch" data-theme="cyan">
                 <span class="swatch-color" style="background:#0a84ff"></span>
-                <span class="swatch-name">Blau</span>
+                <span class="swatch-name" data-i18n="color.blue">Blau</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="himmel">
                 <span class="swatch-color" style="background:#64d2ff"></span>
-                <span class="swatch-name">Himmelblau</span>
+                <span class="swatch-name" data-i18n="color.sky">Himmelblau</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="tuerkis">
                 <span class="swatch-color" style="background:#00c7be"></span>
-                <span class="swatch-name">Türkis</span>
+                <span class="swatch-name" data-i18n="color.teal">Türkis</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="gruen">
                 <span class="swatch-color" style="background:#32d74b"></span>
-                <span class="swatch-name">Grün</span>
+                <span class="swatch-name" data-i18n="color.green">Grün</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="bernstein">
                 <span class="swatch-color" style="background:#ff9f0a"></span>
-                <span class="swatch-name">Bernstein</span>
+                <span class="swatch-name" data-i18n="color.amber">Bernstein</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="rot">
                 <span class="swatch-color" style="background:#ff453a"></span>
-                <span class="swatch-name">Rot</span>
+                <span class="swatch-name" data-i18n="color.red">Rot</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="magenta">
                 <span class="swatch-color" style="background:#ff375f"></span>
-                <span class="swatch-name">Magenta</span>
+                <span class="swatch-name" data-i18n="color.magenta">Magenta</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
               <button class="theme-swatch" data-theme="violett">
                 <span class="swatch-color" style="background:#bf5af2"></span>
-                <span class="swatch-name">Violett</span>
+                <span class="swatch-name" data-i18n="color.violet">Violett</span>
                 <span class="swatch-check"><i class="ti ti-check"></i></span>
               </button>
             </div>
 
             <div class="color-picker-section">
-              <p class="color-picker-label">Eigene Farbe</p>
+              <p class="color-picker-label" data-i18n="settings.customColor">Eigene Farbe</p>
               <div class="color-picker-row">
-                <div class="color-picker-wrap" title="Farbwähler öffnen">
+                <div class="color-picker-wrap" data-i18n-title="settings.openColorPicker">
                   <input type="color" id="accentPicker" value="#0a84ff">
                 </div>
                 <input type="text" id="accentHex" class="hex-input" placeholder="#0a84ff" maxlength="7" spellcheck="false">
@@ -265,15 +282,15 @@
             </div>
           </div>
 
-          <!-- Hintergrund (admin only) -->
+          <!-- Background (admin only) -->
           <div class="settings-section admin-only" id="sectionHintergrund">
-            <h3 class="settings-heading">Hintergrund</h3>
+            <h3 class="settings-heading" data-i18n="bg.title">Hintergrund</h3>
             <div class="bg-mode-toggle">
               <button class="bg-mode-btn active" data-mode="generativ" id="bgModeGenerativ">
-                <i class="ti ti-sparkles"></i><span>Generativ</span>
+                <i class="ti ti-sparkles"></i><span data-i18n="bg.generative">Generativ</span>
               </button>
               <button class="bg-mode-btn" data-mode="image" id="bgModeImage">
-                <i class="ti ti-photo"></i><span>Eigenes Bild</span>
+                <i class="ti ti-photo"></i><span data-i18n="bg.ownImage">Eigenes Bild</span>
               </button>
             </div>
 
@@ -281,44 +298,44 @@
               <div class="upload-drop-zone" id="bgDropZone">
                 <input type="file" id="bgFileInput" accept="image/jpeg,image/png,image/webp" hidden>
                 <i class="ti ti-upload"></i>
-                <p>Bild hierher ziehen</p>
-                <p class="upload-sub">oder <button type="button" class="upload-browse-btn" id="bgBrowseBtn">Datei auswählen</button></p>
-                <p class="upload-hint">JPG · PNG · WebP &nbsp;·&nbsp; max. 10 MB</p>
+                <p data-i18n="bg.drop">Bild hierher ziehen</p>
+                <p class="upload-sub"><span data-i18n="bg.or">oder</span> <button type="button" class="upload-browse-btn" id="bgBrowseBtn" data-i18n="bg.browse">Datei auswählen</button></p>
+                <p class="upload-hint" data-i18n="bg.hint">JPG · PNG · WebP · max. 10 MB</p>
               </div>
               <div class="bg-preview" id="bgPreview">
-                <img id="bgPreviewImg" src="" alt="Hintergrund-Vorschau">
+                <img id="bgPreviewImg" src="" alt="" data-i18n-alt="bg.preview">
                 <button type="button" class="btn-remove-bg" id="bgRemoveBtn">
-                  <i class="ti ti-trash"></i> Bild entfernen
+                  <i class="ti ti-trash"></i> <span data-i18n="bg.remove">Bild entfernen</span>
                 </button>
               </div>
               <div class="settings-msg" id="bgMsg"></div>
             </div>
           </div>
 
-          <!-- Benutzer (admin only) -->
+          <!-- Users (admin only) -->
           <div class="settings-section admin-only" id="sectionUsers">
-            <h3 class="settings-heading">Benutzer</h3>
+            <h3 class="settings-heading" data-i18n="users.title">Benutzer</h3>
             <div id="userList" class="user-list"></div>
 
             <div class="settings-subsection">
-              <h4 class="settings-subheading">Neuer Benutzer</h4>
+              <h4 class="settings-subheading" data-i18n="users.new">Neuer Benutzer</h4>
               <form class="settings-form" id="addUserForm" novalidate>
                 <div class="form-group">
-                  <label for="au-username">Benutzername</label>
-                  <input id="au-username" name="username" type="text" autocomplete="off" placeholder="benutzername">
+                  <label for="au-username" data-i18n="users.username">Benutzername</label>
+                  <input id="au-username" name="username" type="text" autocomplete="off" data-i18n-ph="users.usernamePlaceholder">
                 </div>
                 <div class="form-group">
-                  <label for="au-password">Passwort <span class="label-hint">(min. 8 Zeichen)</span></label>
+                  <label for="au-password"><span data-i18n="users.password">Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 8 Zeichen)</span></label>
                   <input id="au-password" name="password" type="password" placeholder="••••••••">
                 </div>
                 <div class="form-group">
-                  <label for="au-role">Rolle</label>
+                  <label for="au-role" data-i18n="users.role">Rolle</label>
                   <select id="au-role" name="role">
-                    <option value="viewer">Viewer — nur lesen</option>
-                    <option value="admin">Admin — voller Zugriff</option>
+                    <option value="viewer" data-i18n="users.roleViewer">Viewer — nur lesen</option>
+                    <option value="admin" data-i18n="users.roleAdmin">Admin — voller Zugriff</option>
                   </select>
                 </div>
-                <button type="submit" class="btn-primary" id="addUserBtn">Benutzer anlegen</button>
+                <button type="submit" class="btn-primary" id="addUserBtn" data-i18n="users.create">Benutzer anlegen</button>
                 <div class="settings-msg" id="addUserMsg"></div>
               </form>
             </div>
@@ -330,69 +347,69 @@
     </div><!-- /main -->
   </div><!-- /app -->
 
-  <!-- Modal: Dienst hinzufügen -->
-  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-label="Dienst hinzufügen">
+  <!-- Modal: add service -->
+  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" data-i18n-aria="svc.add">
     <div class="modal">
       <div class="modal-header">
-        <h3 id="serviceModalTitle">Dienst hinzufügen</h3>
-        <button class="btn-icon" id="modalClose" aria-label="Schließen">
+        <h3 id="serviceModalTitle" data-i18n="svc.add">Dienst hinzufügen</h3>
+        <button class="btn-icon" id="modalClose" data-i18n-aria="common.close">
           <i class="ti ti-x"></i>
         </button>
       </div>
       <form id="addServiceForm" novalidate>
         <div class="form-group">
-          <label for="f-name">Name *</label>
-          <input id="f-name" name="name" type="text" placeholder="z. B. Portainer" required>
+          <label for="f-name" data-i18n="svc.name">Name *</label>
+          <input id="f-name" name="name" type="text" data-i18n-ph="svc.namePlaceholder" required>
         </div>
         <div class="form-group">
-          <label for="f-desc">Beschreibung</label>
-          <input id="f-desc" name="description" type="text" placeholder="Kurzbeschreibung">
+          <label for="f-desc" data-i18n="svc.description">Beschreibung</label>
+          <input id="f-desc" name="description" type="text" data-i18n-ph="svc.descriptionPlaceholder">
         </div>
         <div class="form-group">
-          <label for="f-url">URL</label>
+          <label for="f-url" data-i18n="svc.url">URL</label>
           <input id="f-url" name="url" type="url" placeholder="http://192.168.0.17:9443">
         </div>
         <div class="form-group">
-          <label for="f-icon">Icon <span class="label-hint">(Tabler Icons Name)</span></label>
-          <input id="f-icon" name="icon" type="text" placeholder="z. B. brand-docker">
+          <label for="f-icon"><span data-i18n="svc.icon">Icon</span> <span class="label-hint" data-i18n="svc.iconHint">(Tabler-Icons-Name)</span></label>
+          <input id="f-icon" name="icon" type="text" data-i18n-ph="svc.iconPlaceholder">
         </div>
-        <button type="submit" class="btn-primary" id="serviceSaveBtn">Hinzufügen</button>
+        <button type="submit" class="btn-primary" id="serviceSaveBtn" data-i18n="svc.submitAdd">Hinzufügen</button>
       </form>
     </div>
   </div>
 
-  <!-- Modal: Vault-Eintrag hinzufügen/bearbeiten -->
-  <div class="modal-overlay" id="vaultModalOverlay" role="dialog" aria-modal="true" aria-label="Vault-Eintrag">
+  <!-- Modal: add/edit vault entry -->
+  <div class="modal-overlay" id="vaultModalOverlay" role="dialog" aria-modal="true" data-i18n-aria="vault.entry">
     <div class="modal">
       <div class="modal-header">
-        <h3 id="vaultModalTitle">Eintrag hinzufügen</h3>
-        <button class="btn-icon" id="vaultModalClose" aria-label="Schließen">
+        <h3 id="vaultModalTitle" data-i18n="vault.addEntry">Eintrag hinzufügen</h3>
+        <button class="btn-icon" id="vaultModalClose" data-i18n-aria="common.close">
           <i class="ti ti-x"></i>
         </button>
       </div>
       <form id="vaultEntryForm" novalidate>
         <div class="form-group">
-          <label for="v-title">Titel *</label>
-          <input id="v-title" name="title" type="text" placeholder="z. B. GitHub" required maxlength="200">
+          <label for="v-title" data-i18n="vault.entryTitle">Titel *</label>
+          <input id="v-title" name="title" type="text" data-i18n-ph="vault.titlePlaceholder" required maxlength="200">
         </div>
         <div class="form-group">
-          <label for="v-username">Benutzername</label>
+          <label for="v-username" data-i18n="vault.username">Benutzername</label>
           <input id="v-username" name="username" type="text" autocomplete="off" maxlength="200">
         </div>
         <div class="form-group">
-          <label for="v-password">Passwort</label>
+          <label for="v-password" data-i18n="vault.password">Passwort</label>
           <div class="vault-pw-row">
             <input id="v-password" name="password" type="password" autocomplete="new-password" maxlength="2000">
-            <button type="button" class="btn-icon" id="vPwToggle" aria-label="Passwort anzeigen">
+            <button type="button" class="btn-icon" id="vPwToggle" data-i18n-aria="vault.showPassword">
               <i class="ti ti-eye"></i>
             </button>
-            <button type="button" class="btn-icon" id="vPwGenerate" aria-label="Passwort generieren">
+            <button type="button" class="btn-icon" id="vPwGenerate" data-i18n-aria="vault.generatePassword">
               <i class="ti ti-refresh"></i>
             </button>
           </div>
           <div class="vault-generator" id="vaultGenerator">
             <div class="vault-gen-row">
-              <span>Länge</span>
+              <span data-i18n="vault.length">Länge</span>
               <input type="range" id="vGenLength" min="8" max="64" value="20">
               <span id="vGenLengthVal">20</span>
             </div>
@@ -405,19 +422,20 @@
           </div>
         </div>
         <div class="form-group">
-          <label for="v-url">URL</label>
-          <input id="v-url" name="url" type="url" placeholder="https://example.com" maxlength="500">
+          <label for="v-url" data-i18n="vault.url">URL</label>
+          <input id="v-url" name="url" type="url" data-i18n-ph="vault.urlPlaceholder" maxlength="500">
         </div>
         <div class="form-group">
-          <label for="v-notes">Notizen</label>
+          <label for="v-notes" data-i18n="vault.notes">Notizen</label>
           <textarea id="v-notes" name="notes" rows="3" maxlength="5000"></textarea>
         </div>
-        <button type="submit" class="btn-primary" id="vaultSaveBtn">Speichern</button>
+        <button type="submit" class="btn-primary" id="vaultSaveBtn" data-i18n="vault.save">Speichern</button>
         <div class="settings-msg" id="vaultModalMsg"></div>
       </form>
     </div>
   </div>
 
+  <script src="/i18n.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
