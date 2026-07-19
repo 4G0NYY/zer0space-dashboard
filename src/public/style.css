@@ -224,17 +224,26 @@ body::after {
 }
 
 /* ---- Language Toggle (DE / EN) ---- */
+/* Base = the topbar segmented control. It deliberately mirrors .search-bar
+   (36px tall, 10px radius, 1px border, --surface) so the two sit on exactly the
+   same baseline and read as one row of controls rather than stacked widgets. */
 .lang-toggle {
   display: inline-flex;
   flex-shrink: 0;
-  padding: 2px;
+  height: 36px;
+  padding: 3px;
   gap: 2px;
   background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color var(--t), background var(--t);
 }
+.lang-toggle:hover { background: var(--surface-hover); }
+
 .lang-btn {
-  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
   border: none;
   border-radius: 7px;
   background: transparent;
@@ -244,26 +253,57 @@ body::after {
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background var(--t), color var(--t);
+  transition: background var(--t), color var(--t), transform 0.15s var(--ease);
 }
 .lang-btn:hover { color: var(--text-1); }
+.lang-btn:active { transform: scale(0.94); }
 .lang-btn.active { background: var(--accent-bg); color: var(--accent); }
 
-/* In the topbar the toggle takes over the avatar's right-alignment so the two
-   sit together at the far right instead of being pushed apart. */
+/* The toggle takes over the avatar's right-alignment so the two sit together at
+   the far right instead of being pushed apart by margin-left:auto. */
 .topbar .lang-toggle { margin-left: auto; }
 .topbar .lang-toggle + .avatar { margin-left: 10px; }
 
-/* Larger variant for the settings page, where there is room for full words. */
-.lang-toggle-lg { margin-bottom: 10px; }
-.lang-toggle-lg .lang-btn { padding: 8px 18px; font-size: 14px; font-weight: 500; }
-
-/* Login page: centred under the form. */
-.lang-toggle-login {
+/* Settings variant — NOT a pill. On that page every two-way choice is a pair of
+   separate bordered buttons (see .bg-mode-toggle), so this matches those metrics
+   exactly: same padding, radius, border weight, font and active treatment. */
+.lang-toggle-lg {
   display: flex;
-  width: fit-content;
-  margin: 22px auto 0;
+  height: auto;
+  padding: 0;
+  gap: 8px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  margin-bottom: 14px;
 }
+.lang-toggle-lg:hover { background: none; }
+.lang-toggle-lg .lang-btn {
+  padding: 9px 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: background var(--t), border-color var(--t), color var(--t),
+              transform 0.15s var(--ease);
+}
+.lang-toggle-lg .lang-btn:hover { background: var(--surface-hover); color: var(--text-1); }
+.lang-toggle-lg .lang-btn:active { transform: scale(0.96); }
+.lang-toggle-lg .lang-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-1);
+}
+
+/* De-emphasised note under a settings control. Same treatment as .upload-hint,
+   but not tied to the background-upload section. */
+.settings-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+/* The login page styles its own toggle: login.html is self-contained and does
+   not load this stylesheet, so its rules live in that file's <style> block. */
 
 /* ---- Shared buttons ---- */
 .btn-icon {
