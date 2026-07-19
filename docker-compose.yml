@@ -1,0 +1,140 @@
+services:
+  dashboard:
+    image: ghcr.io/zer0space-net/zer0space-dashboard:latest
+    ports:
+      - "8080:3000"
+    environment:
+      - DOCKER_PROXY_URL=http://socketproxy:2375
+      - TZ=Europe/Zurich
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - FORCE_HTTPS=${FORCE_HTTPS:-false}
+      - GLANCES_SERVICE=${GLANCES_SERVICE:-dashboard_glances}
+      - GLANCES_PORT=${GLANCES_PORT:-61208}
+      # ── Admin credentials (set in Portainer → Stack → Environment variables) ────────────
+      # DASHBOARD_USER  : Username of the initial admin (not a secret)
+      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
+      # DASHBOARD_PASS  : Plaintext password — hashed on first start, then ignored.
+      #                   Set in Portainer: DASHBOARD_PASS=your-secure-password
+      - DASHBOARD_PASS=${DASHBOARD_PASS:-}
+      # DASHBOARD_HASH  : Alternative to DASHBOARD_PASS — pre-computed bcrypt hash ($2b$12$...).
+      #                   Generate: docker run --rm ghcr.io/zer0space-net/zer0space-dashboard:latest \
+      #                     node -e "console.log(require('bcryptjs').hashSync('PASSWORD',12))"
+      - DASHBOARD_HASH=${DASHBOARD_HASH:-}
+      # SESSION_SECRET  : optional — auto-generated and stored in the DB if not set.
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # ── PostgreSQL (zer0space-postgres, standalone on zs-state-01) ─────────────────────
+      # Either DATABASE_URL as a whole, OR the individual values below.
+      # NEVER put the password here — set it as a Portainer env var or a Swarm secret.
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DB_HOST=${DB_HOST:-192.168.0.16}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-zer0space}
+      - DB_USER=${DB_USER:-dashboard}
+      - DB_PASS=${DB_PASS:-}
+    volumes:
+      # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
+      # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
+      #
+      # This mount is still required AFTER the PostgreSQL migration. The database
+      # itself is gone (services.db now lives on zs-state-01), but /data still holds
+      # files that are not DB rows:
+      #   /data/background/     uploaded background images
+      #   /data/backup-status/  JSON files written per node by the backup script
+      # Only once both live elsewhere can this volume be dropped.
+      #
+      # IMPORTANT: if /mnt/storage is NOT mounted on a node, Docker silently creates
+      # the directory empty — the background image and the backup card then go missing.
+      # Check on every node before deploying:
+      #   mountpoint -q /mnt/storage && echo OK
+      - /mnt/storage/dashboard:/data
+    networks:
+      - dashboard_net
+      - cloudflared_proxy
+    deploy:
+      replicas: 1
+      # No node.hostname pinning anymore — the data lives on NFS, so the service
+      # may run on any node.
+      # NOTE: the dashboard container reaches the socketproxy over the "dashboard_net"
+      # overlay. The socketproxy MUST stay on a manager (only managers answer /nodes,
+      # /services and /tasks). While the known VXLAN issue towards zs-worker-01/02
+      # exists, the Swarm status can break if the dashboard is scheduled there.
+      # Fallback in that case:
+      #   placement: { constraints: [node.role == manager] }
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+
+  socketproxy:
+    image: tecnativa/docker-socket-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Only what the dashboard needs — everything else explicitly off
+      - SERVICES=1
+      - NODES=1
+      - TASKS=1
+      - CONTAINERS=0
+      - IMAGES=0
+      - NETWORKS=0
+      - VOLUMES=0
+      - AUTH=0
+      - POST=0
+    networks:
+      - dashboard_net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          # Stays pinned: only manager nodes answer the Swarm API endpoints
+          # /nodes, /services and /tasks that the dashboard needs for the cluster
+          # status. The socketproxy holds no persistent state (only the host's
+          # Docker socket), so there is nothing to put on NFS here.
+          - node.hostname == zs-node-01
+      resources:
+        limits:
+          cpus: '0.10'
+          memory: 64M
+        reservations:
+          cpus: '0.01'
+          memory: 16M
+
+  glances:
+    image: nicolargo/glances:latest-full
+    entrypoint: ["python3", "-m", "glances", "-w"]
+    hostname: "{{.Node.Hostname}}"
+    # pid: host is not supported in Swarm mode — omitted.
+    # CPU/RAM values still come correctly from the container namespace via /proc.
+    # mode:host port → binds directly to host NIC, bypasses ingress mesh (no VXLAN needed).
+    # Backend connects via Status.Addr from /nodes (LAN IP) instead of overlay IPs.
+    # No overlay network — Glances is not part of dashboard_net.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /etc/hostname:/etc/hostname:ro
+      - /etc/os-release:/etc/os-release:ro
+    ports:
+      - target: 61208
+        published: 61208
+        protocol: tcp
+        mode: host
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '0.20'
+          memory: 128M
+        reservations:
+          cpus: '0.02'
+          memory: 32M
+
+networks:
+  dashboard_net:
+    driver: overlay
+  cloudflared_proxy:
+    external: true

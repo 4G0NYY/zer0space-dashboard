@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>zer0space</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Background layers (z-index 0): generative canvas OR custom image -->
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
+  <div id="bg-image" aria-hidden="true"></div>
+
+  <div class="app" id="app">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="wordmark">zer0space</span>
+        <button class="btn-icon" id="sidebarToggle" aria-label="Seitenleiste ein-/ausklappen">
+          <i class="ti ti-layout-sidebar-left-collapse"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-view="home">
+          <i class="ti ti-home"></i><span>Home</span>
+        </a>
+        <a href="#" class="nav-item" data-view="ki">
+          <i class="ti ti-brain"></i><span>KI</span>
+        </a>
+        <a href="#" class="nav-item" data-view="cloud">
+          <i class="ti ti-cloud"></i><span>Cloud</span>
+        </a>
+        <a href="#" class="nav-item" data-view="vault">
+          <i class="ti ti-lock-password"></i><span>Vault</span>
+        </a>
+        <a href="#" class="nav-item" data-view="einstellungen">
+          <i class="ti ti-settings"></i><span>Einstellungen</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="nav-item logout-btn" id="logoutBtn" aria-label="Abmelden">
+          <i class="ti ti-logout"></i><span>Abmelden</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="btn-icon mobile-only" id="mobileSidebarToggle" aria-label="Menü">
+          <i class="ti ti-menu-2"></i>
+        </button>
+        <div class="search-bar" id="searchBarWrap">
+          <i class="ti ti-search"></i>
+          <input type="text" id="searchInput" placeholder="Dienste suchen …" autocomplete="off">
+        </div>
+        <div class="avatar" id="userAvatar" title=""></div>
+      </header>
+
+      <div class="content" id="content">
+
+        <!-- HOME VIEW -->
+        <div class="view active" id="view-home">
+          <div class="greeting">
+            <h1 id="greeting">Willkommen</h1>
+            <p id="greetingDate"></p>
+          </div>
+
+          <div class="status-grid">
+            <div class="status-card">
+              <div class="status-icon"><i class="ti ti-server"></i></div>
+              <div>
+                <div class="status-value" id="nodesOnline">—</div>
+                <div class="status-label">Nodes online</div>
+              </div>
+            </div>
+            <div class="status-card">
+              <div class="status-icon"><i class="ti ti-stack-2"></i></div>
+              <div>
+                <div class="status-value" id="servicesActive">—</div>
+                <div class="status-label">Swarm-Dienste</div>
+              </div>
+            </div>
+            <div class="status-card">
+              <div class="status-icon"><i class="ti ti-heartbeat"></i></div>
+              <div>
+                <div class="status-value" id="clusterHealth">—</div>
+                <div class="status-label">Cluster-Status</div>
+              </div>
+            </div>
+            <div class="status-card backup-card" id="backupCard" title="Klicken für Node-Details">
+              <div class="backup-card-main">
+                <div class="status-icon"><i class="ti ti-device-floppy"></i></div>
+                <div>
+                  <div class="status-value backup-time" id="backupTime">—</div>
+                  <div class="status-label">Backup <span class="backup-expand-hint" id="backupExpandHint"></span></div>
+                </div>
+              </div>
+              <div class="backup-detail" id="backupDetail"></div>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <h2>Nodes</h2>
+          </div>
+          <div class="node-grid" id="nodeGrid">
+            <div class="node-skeleton"></div>
+            <div class="node-skeleton"></div>
+            <div class="node-skeleton"></div>
+            <div class="node-skeleton"></div>
+          </div>
+
+          <div class="section-header" style="margin-top:32px">
+            <h2>Dienste</h2>
+          </div>
+          <div class="services-grid" id="servicesGrid"></div>
+        </div>
+
+        <!-- KI VIEW -->
+        <div class="view" id="view-ki">
+          <div class="greeting">
+            <h1>KI-Assistent</h1>
+            <p>Vorbereitet für einen lokalen Sprachmodell-Chat</p>
+          </div>
+          <div class="placeholder-view">
+            <div class="placeholder-icon"><i class="ti ti-brain"></i></div>
+            <h2>Kommt bald</h2>
+            <p>Hier entsteht ein Chat-Interface für lokale KI-Modelle (Ollama / Open-WebUI).</p>
+          </div>
+          <!-- Chat layout prepared (hidden until integration) -->
+          <div class="chat-layout" aria-hidden="true" style="display:none">
+            <div class="chat-messages" id="chatMessages"></div>
+            <div class="chat-input-bar">
+              <input type="text" placeholder="Nachricht eingeben …" disabled>
+              <button class="btn-icon" disabled><i class="ti ti-send"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CLOUD VIEW -->
+        <div class="view" id="view-cloud">
+          <div class="greeting">
+            <h1>Cloud</h1>
+          </div>
+          <div class="placeholder-view">
+            <div class="placeholder-icon"><i class="ti ti-cloud"></i></div>
+            <h2>Kommt bald</h2>
+            <p>Cloudflare-Status und Tunnel-Übersicht werden hier erscheinen.</p>
+          </div>
+        </div>
+
+        <!-- VAULT VIEW (nativer Passwortmanager) -->
+        <div class="view" id="view-vault">
+          <div class="greeting">
+            <h1>Vault</h1>
+            <p>Deine eigenen Zugangsdaten — Ende-zu-Ende nur für dich entschlüsselbar</p>
+          </div>
+
+          <div id="vaultLocked" class="placeholder-view" style="display:none">
+            <div class="placeholder-icon"><i class="ti ti-lock-question"></i></div>
+            <h2>Vault gesperrt</h2>
+            <p>Deine Session wurde vor der Vault-Funktion erstellt oder dein Passwort wurde
+               zurückgesetzt. Bitte einmal ab- und wieder anmelden, um sie freizuschalten.</p>
+          </div>
+
+          <div id="vaultUnlockedArea">
+            <div class="search-bar vault-search-bar" id="vaultSearchWrap">
+              <i class="ti ti-search"></i>
+              <input type="text" id="vaultSearchInput" placeholder="Titel oder URL suchen …" autocomplete="off">
+            </div>
+
+            <div class="vault-list" id="vaultList"></div>
+
+            <button type="button" class="btn-primary vault-add-btn" id="vaultAddBtn">
+              <i class="ti ti-plus"></i> Eintrag hinzufügen
+            </button>
+          </div>
+        </div>
+
+        <!-- EINSTELLUNGEN VIEW -->
+        <div class="view" id="view-einstellungen">
+          <div class="greeting">
+            <h1>Einstellungen</h1>
+          </div>
+
+          <!-- Passwort -->
+          <div class="settings-section">
+            <h3 class="settings-heading">Passwort ändern</h3>
+            <form class="settings-form" id="changePasswordForm" novalidate>
+              <div class="form-group">
+                <label for="cp-current">Aktuelles Passwort</label>
+                <input id="cp-current" name="currentPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label for="cp-new">Neues Passwort <span class="label-hint">(min. 8 Zeichen)</span></label>
+                <input id="cp-new" name="newPassword" type="password" autocomplete="new-password" placeholder="••••••••">
+              </div>
+              <div class="form-group">
+                <label for="cp-confirm">Bestätigen</label>
+                <input id="cp-confirm" name="confirmPassword" type="password" autocomplete="new-password" placeholder="••••••••">
+              </div>
+              <button type="submit" class="btn-primary" id="cpSubmitBtn">Passwort speichern</button>
+              <div class="settings-msg" id="cpMsg"></div>
+            </form>
+          </div>
+
+          <!-- Akzentfarbe -->
+          <div class="settings-section">
+            <h3 class="settings-heading">Akzentfarbe</h3>
+            <div class="theme-grid" id="themeGrid">
+              <button class="theme-swatch" data-theme="cyan">
+                <span class="swatch-color" style="background:#0a84ff"></span>
+                <span class="swatch-name">Blau</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="himmel">
+                <span class="swatch-color" style="background:#64d2ff"></span>
+                <span class="swatch-name">Himmelblau</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="tuerkis">
+                <span class="swatch-color" style="background:#00c7be"></span>
+                <span class="swatch-name">Türkis</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="gruen">
+                <span class="swatch-color" style="background:#32d74b"></span>
+                <span class="swatch-name">Grün</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="bernstein">
+                <span class="swatch-color" style="background:#ff9f0a"></span>
+                <span class="swatch-name">Bernstein</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="rot">
+                <span class="swatch-color" style="background:#ff453a"></span>
+                <span class="swatch-name">Rot</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="magenta">
+                <span class="swatch-color" style="background:#ff375f"></span>
+                <span class="swatch-name">Magenta</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+              <button class="theme-swatch" data-theme="violett">
+                <span class="swatch-color" style="background:#bf5af2"></span>
+                <span class="swatch-name">Violett</span>
+                <span class="swatch-check"><i class="ti ti-check"></i></span>
+              </button>
+            </div>
+
+            <div class="color-picker-section">
+              <p class="color-picker-label">Eigene Farbe</p>
+              <div class="color-picker-row">
+                <div class="color-picker-wrap" title="Farbwähler öffnen">
+                  <input type="color" id="accentPicker" value="#0a84ff">
+                </div>
+                <input type="text" id="accentHex" class="hex-input" placeholder="#0a84ff" maxlength="7" spellcheck="false">
+              </div>
+            </div>
+          </div>
+
+          <!-- Hintergrund (admin only) -->
+          <div class="settings-section admin-only" id="sectionHintergrund">
+            <h3 class="settings-heading">Hintergrund</h3>
+            <div class="bg-mode-toggle">
+              <button class="bg-mode-btn active" data-mode="generativ" id="bgModeGenerativ">
+                <i class="ti ti-sparkles"></i><span>Generativ</span>
+              </button>
+              <button class="bg-mode-btn" data-mode="image" id="bgModeImage">
+                <i class="ti ti-photo"></i><span>Eigenes Bild</span>
+              </button>
+            </div>
+
+            <div class="bg-upload-section" id="bgUploadSection">
+              <div class="upload-drop-zone" id="bgDropZone">
+                <input type="file" id="bgFileInput" accept="image/jpeg,image/png,image/webp" hidden>
+                <i class="ti ti-upload"></i>
+                <p>Bild hierher ziehen</p>
+                <p class="upload-sub">oder <button type="button" class="upload-browse-btn" id="bgBrowseBtn">Datei auswählen</button></p>
+                <p class="upload-hint">JPG · PNG · WebP &nbsp;·&nbsp; max. 10 MB</p>
+              </div>
+              <div class="bg-preview" id="bgPreview">
+                <img id="bgPreviewImg" src="" alt="Hintergrund-Vorschau">
+                <button type="button" class="btn-remove-bg" id="bgRemoveBtn">
+                  <i class="ti ti-trash"></i> Bild entfernen
+                </button>
+              </div>
+              <div class="settings-msg" id="bgMsg"></div>
+            </div>
+          </div>
+
+          <!-- Benutzer (admin only) -->
+          <div class="settings-section admin-only" id="sectionUsers">
+            <h3 class="settings-heading">Benutzer</h3>
+            <div id="userList" class="user-list"></div>
+
+            <div class="settings-subsection">
+              <h4 class="settings-subheading">Neuer Benutzer</h4>
+              <form class="settings-form" id="addUserForm" novalidate>
+                <div class="form-group">
+                  <label for="au-username">Benutzername</label>
+                  <input id="au-username" name="username" type="text" autocomplete="off" placeholder="benutzername">
+                </div>
+                <div class="form-group">
+                  <label for="au-password">Passwort <span class="label-hint">(min. 8 Zeichen)</span></label>
+                  <input id="au-password" name="password" type="password" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                  <label for="au-role">Rolle</label>
+                  <select id="au-role" name="role">
+                    <option value="viewer">Viewer — nur lesen</option>
+                    <option value="admin">Admin — voller Zugriff</option>
+                  </select>
+                </div>
+                <button type="submit" class="btn-primary" id="addUserBtn">Benutzer anlegen</button>
+                <div class="settings-msg" id="addUserMsg"></div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+
+      </div><!-- /content -->
+    </div><!-- /main -->
+  </div><!-- /app -->
+
+  <!-- Modal: Dienst hinzufügen -->
+  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-label="Dienst hinzufügen">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="serviceModalTitle">Dienst hinzufügen</h3>
+        <button class="btn-icon" id="modalClose" aria-label="Schließen">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <form id="addServiceForm" novalidate>
+        <div class="form-group">
+          <label for="f-name">Name *</label>
+          <input id="f-name" name="name" type="text" placeholder="z. B. Portainer" required>
+        </div>
+        <div class="form-group">
+          <label for="f-desc">Beschreibung</label>
+          <input id="f-desc" name="description" type="text" placeholder="Kurzbeschreibung">
+        </div>
+        <div class="form-group">
+          <label for="f-url">URL</label>
+          <input id="f-url" name="url" type="url" placeholder="http://192.168.0.17:9443">
+        </div>
+        <div class="form-group">
+          <label for="f-icon">Icon <span class="label-hint">(Tabler Icons Name)</span></label>
+          <input id="f-icon" name="icon" type="text" placeholder="z. B. brand-docker">
+        </div>
+        <button type="submit" class="btn-primary" id="serviceSaveBtn">Hinzufügen</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Vault-Eintrag hinzufügen/bearbeiten -->
+  <div class="modal-overlay" id="vaultModalOverlay" role="dialog" aria-modal="true" aria-label="Vault-Eintrag">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="vaultModalTitle">Eintrag hinzufügen</h3>
+        <button class="btn-icon" id="vaultModalClose" aria-label="Schließen">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <form id="vaultEntryForm" novalidate>
+        <div class="form-group">
+          <label for="v-title">Titel *</label>
+          <input id="v-title" name="title" type="text" placeholder="z. B. GitHub" required maxlength="200">
+        </div>
+        <div class="form-group">
+          <label for="v-username">Benutzername</label>
+          <input id="v-username" name="username" type="text" autocomplete="off" maxlength="200">
+        </div>
+        <div class="form-group">
+          <label for="v-password">Passwort</label>
+          <div class="vault-pw-row">
+            <input id="v-password" name="password" type="password" autocomplete="new-password" maxlength="2000">
+            <button type="button" class="btn-icon" id="vPwToggle" aria-label="Passwort anzeigen">
+              <i class="ti ti-eye"></i>
+            </button>
+            <button type="button" class="btn-icon" id="vPwGenerate" aria-label="Passwort generieren">
+              <i class="ti ti-refresh"></i>
+            </button>
+          </div>
+          <div class="vault-generator" id="vaultGenerator">
+            <div class="vault-gen-row">
+              <span>Länge</span>
+              <input type="range" id="vGenLength" min="8" max="64" value="20">
+              <span id="vGenLengthVal">20</span>
+            </div>
+            <div class="vault-gen-checks">
+              <label><input type="checkbox" id="vGenLower" checked> a-z</label>
+              <label><input type="checkbox" id="vGenUpper" checked> A-Z</label>
+              <label><input type="checkbox" id="vGenDigits" checked> 0-9</label>
+              <label><input type="checkbox" id="vGenSymbols" checked> !@#$</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="v-url">URL</label>
+          <input id="v-url" name="url" type="url" placeholder="https://example.com" maxlength="500">
+        </div>
+        <div class="form-group">
+          <label for="v-notes">Notizen</label>
+          <textarea id="v-notes" name="notes" rows="3" maxlength="5000"></textarea>
+        </div>
+        <button type="submit" class="btn-primary" id="vaultSaveBtn">Speichern</button>
+        <div class="settings-msg" id="vaultModalMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

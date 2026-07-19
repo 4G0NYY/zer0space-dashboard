@@ -1,0 +1,9 @@
+# The image is built and run on Linux — keep LF in the working tree on every
+# platform so nothing ends up with CRLF inside the container.
+* text=auto eol=lf
+
+# Binary / generated
+*.png binary
+*.jpg binary
+*.webp binary
+package-lock.json -diff linguist-generated

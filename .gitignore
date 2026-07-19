@@ -1,0 +1,16 @@
+# Never commit secrets
+.env
+.env.*
+!.env.example
+
+# Node dependencies (installed in the image / locally for the migration script)
+node_modules/
+
+# Local SQLite databases (legacy — pre-PostgreSQL, kept out of git)
+*.db
+*.db-journal
+*.sqlite
+
+# OS noise
+.DS_Store
+Thumbs.db

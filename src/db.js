@@ -1,0 +1,220 @@
+'use strict';
+
+// PostgreSQL access layer for the dashboard.
+//
+// Replaces the previous better-sqlite3 (synchronous, local file) setup: the DB now
+// lives on zs-state-01 (192.168.0.16), so the dashboard holds no database state of
+// its own and can be scheduled on any Swarm node.
+//
+// Everything here is async. The helpers mirror the three shapes the old code used:
+//   db.prepare(...).run(...)  →  await db.query(sql, params)
+//   db.prepare(...).get(...)  →  await db.one(sql, params)
+//   db.prepare(...).all(...)  →  await db.all(sql, params)
+//   db.transaction(fn)        →  await db.tx(async client => { ... })
+
+const { Pool } = require('pg');
+const fs = require('fs');
+
+// Secret priority: Docker Swarm secret file → env var → null.
+// Same pattern as server.js so the DB password never has to sit in the compose file.
+function readSecret(secretName, envName) {
+  try {
+    return fs.readFileSync(`/run/secrets/${secretName}`, 'utf8').trim();
+  } catch {
+    return process.env[envName] || null;
+  }
+}
+
+function buildConfig() {
+  // DATABASE_URL wins if set (postgres://user:pass@host:port/db) — otherwise the
+  // individual DB_* variables are used.
+  if (process.env.DATABASE_URL) {
+    return { connectionString: process.env.DATABASE_URL };
+  }
+  return {
+    host:     process.env.DB_HOST || '192.168.0.16',
+    port:     parseInt(process.env.DB_PORT || '5432', 10),
+    database: process.env.DB_NAME || 'zer0space',
+    user:     process.env.DB_USER || 'dashboard',
+    password: readSecret('db_password', 'DB_PASS') || undefined,
+  };
+}
+
+const pool = new Pool({
+  ...buildConfig(),
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+});
+
+// An error on an IDLE client (server restarted, network dropped) is emitted on the
+// pool, not on any query. Without this listener Node treats it as an unhandled
+// 'error' event and kills the process — exactly the crash we must avoid.
+pool.on('error', (err) => {
+  ready = false;
+  console.error(`[db] idle client error: ${err.message} — pool marked not ready, will reconnect on next query`);
+});
+
+let ready = false;
+function isReady() { return ready; }
+
+// Connection-level failures we want to report as 503 (DB down / unreachable)
+// rather than 500 (bug in our code).
+const CONN_ERR_CODES = new Set([
+  'ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ECONNRESET',
+  '57P01', // admin_shutdown
+  '57P03', // cannot_connect_now
+  '3D000', // invalid_catalog_name (database does not exist)
+  '28P01', // invalid_password
+  '28000', // invalid_authorization_specification
+]);
+
+function isConnectionError(err) {
+  return Boolean(err && (CONN_ERR_CODES.has(err.code) || err.message === 'Connection terminated unexpectedly'));
+}
+
+async function query(sql, params = []) {
+  try {
+    const res = await pool.query(sql, params);
+    ready = true;
+    return res;
+  } catch (err) {
+    if (isConnectionError(err)) ready = false;
+    throw err;
+  }
+}
+
+async function one(sql, params = []) {
+  const { rows } = await query(sql, params);
+  return rows[0];
+}
+
+async function all(sql, params = []) {
+  const { rows } = await query(sql, params);
+  return rows;
+}
+
+// Transaction helper. The callback gets a dedicated client — every statement inside
+// MUST use that client, not the pool, or it runs outside the transaction.
+async function tx(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* connection already gone */ }
+    if (isConnectionError(err)) ready = false;
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ---- Schema ----
+// Idempotent: safe to run on every start. Creates the tables on a fresh DB and
+// adds later columns to an existing one.
+
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS services (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    url         TEXT NOT NULL DEFAULT '',
+    icon        TEXT NOT NULL DEFAULT 'layout-dashboard',
+    status      TEXT NOT NULL DEFAULT 'unknown'
+  );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id         SERIAL PRIMARY KEY,
+    username   TEXT NOT NULL UNIQUE,
+    hash       TEXT NOT NULL,
+    role       TEXT NOT NULL DEFAULT 'admin',
+    theme      TEXT DEFAULT NULL,
+    -- PBKDF2 salt for this user's vault key. NULL until their first login
+    -- (generated lazily in /api/login). The KEY itself is never stored.
+    vault_salt TEXT DEFAULT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS vault_entries (
+    id                 SERIAL PRIMARY KEY,
+    user_id            INTEGER NOT NULL REFERENCES users(id),
+    title              TEXT NOT NULL,
+    username           TEXT NOT NULL DEFAULT '',
+    encrypted_password TEXT NOT NULL DEFAULT '',
+    encrypted_notes    TEXT NOT NULL DEFAULT '',
+    url                TEXT NOT NULL DEFAULT '',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_vault_entries_user ON vault_entries(user_id);
+
+  -- Columns added after the initial release (no-ops on a fresh DB).
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS role       TEXT NOT NULL DEFAULT 'admin';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS theme      TEXT DEFAULT NULL;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_salt TEXT DEFAULT NULL;
+`;
+
+async function initSchema() {
+  await query(SCHEMA);
+  // Default global theme (idempotent).
+  await query(
+    "INSERT INTO settings (key, value) VALUES ('theme', 'cyan') ON CONFLICT (key) DO NOTHING"
+  );
+}
+
+// Try to reach the DB, retrying with a short backoff. Returns true on success.
+// Used at startup so a briefly-unavailable Postgres doesn't take the dashboard down.
+async function waitForDb({ attempts = 5, delayMs = 2000 } = {}) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await query('SELECT 1');
+      return true;
+    } catch (err) {
+      const last = i === attempts;
+      console.error(
+        `[db] connection attempt ${i}/${attempts} failed: ${err.message}` +
+        (last ? '' : ` — retrying in ${delayMs}ms`)
+      );
+      if (!last) await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  return false;
+}
+
+// Keeps trying in the background after a failed startup, so the dashboard heals
+// on its own once Postgres comes back — no container restart needed.
+function retryInBackground(intervalMs = 30_000) {
+  const timer = setInterval(async () => {
+    if (ready) return;
+    try {
+      await initSchema();
+      ready = true;
+      console.log('[db] PostgreSQL reachable again — schema verified, DB routes are live');
+    } catch (err) {
+      console.error(`[db] still unreachable: ${err.message}`);
+    }
+  }, intervalMs);
+  timer.unref?.();
+  return timer;
+}
+
+function describeTarget() {
+  if (process.env.DATABASE_URL) return 'DATABASE_URL (credentials hidden)';
+  const c = buildConfig();
+  return `${c.user}@${c.host}:${c.port}/${c.database}`;
+}
+
+module.exports = {
+  pool, query, one, all, tx,
+  initSchema, waitForDb, retryInBackground,
+  isReady, isConnectionError, describeTarget,
+  readSecret,
+};
