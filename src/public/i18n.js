@@ -175,6 +175,7 @@ const STRINGS = {
 
     // ── Login ─────────────────────────────────────────────────────────────
     'login.subtitle': 'Homelab Dashboard',
+    'login.logoAlt': 'May, das zer0space-Maskottchen',
     'login.username': 'Benutzername',
     'login.password': 'Passwort',
     'login.submit': 'Anmelden',
@@ -367,6 +368,7 @@ const STRINGS = {
 
     // ── Login ─────────────────────────────────────────────────────────────
     'login.subtitle': 'Homelab Dashboard',
+    'login.logoAlt': 'May, the zer0space mascot',
     'login.username': 'Username',
     'login.password': 'Password',
     'login.submit': 'Sign in',

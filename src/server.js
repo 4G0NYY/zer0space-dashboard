@@ -178,6 +178,20 @@ app.use(helmet({
 }));
 
 app.use(express.json({ limit: '16kb' }));
+
+// Static images (mascot logo, favicons) are content-stable: they only change when
+// a new file is committed, so they get a long max-age instead of the revalidation
+// round trip every page load would otherwise cost. Mounted before the general
+// static handler so it wins for /img/*.
+//
+// Deliberately NOT applied to the HTML/JS/CSS below: this frontend has no build
+// step and therefore no content hashes in filenames, so caching those would leave
+// browsers on a stale bundle after a deploy.
+app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {
+  maxAge: '30d',
+  immutable: false,
+}));
+
 // { index: false } prevents express.static from auto-serving index.html for GET /
 // without a session. The SPA root is served explicitly below, behind requireAuth.
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
