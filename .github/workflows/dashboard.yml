@@ -20,11 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # CR_PAT (a classic PAT with write:packages) rather than GITHUB_TOKEN.
+      # GITHUB_TOKEN only carries write access to packages that are linked to
+      # this repository; a GHCR package created outside it — or one whose access
+      # settings never got the repo added — rejects it regardless of the
+      # permissions block above.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.CR_PAT }}
 
       - uses: docker/setup-buildx-action@v3
 
