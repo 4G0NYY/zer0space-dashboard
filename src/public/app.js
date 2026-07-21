@@ -376,13 +376,20 @@ function fillCls(pct) {
 }
 
 function nodeCardHtml(node) {
+  // Free text from EXTRA_HOSTS ("Stateful", "Storage"). Escaped like any other
+  // value — it reaches here from an environment variable, not from a literal.
+  const badge = node.label
+    ? `<span class="node-badge">${esc(node.label)}</span>`
+    : '';
+
   if (!node.online) {
     return `
       <div class="node-header">
         <span class="node-name">${esc(node.hostname)}</span>
+        ${badge}
         <span class="dot dot-red"></span>
       </div>
-      <div class="node-offline-msg">Nicht erreichbar</div>`;
+      <div class="node-offline-msg">${esc(t('home.unreachable'))}</div>`;
   }
 
   const cpu     = node.cpu ?? 0;
@@ -392,6 +399,7 @@ function nodeCardHtml(node) {
   return `
     <div class="node-header">
       <span class="node-name">${esc(node.hostname)}</span>
+      ${badge}
       <span class="dot dot-green"></span>
     </div>
     <div class="node-body">
@@ -464,6 +472,12 @@ function updateNodeMetrics(card, node) {
 async function loadMetrics() {
   let data;
   try { data = await fetch('/api/metrics').then(r => r.json()); } catch { return; }
+  // Standalone hosts are rendered FIRST and unconditionally. They do not come
+  // from the Docker proxy, so they are still reported when the Swarm side has
+  // failed and `nodes` comes back empty — which is exactly the moment the
+  // database and storage hosts matter most.
+  renderExtraHosts(data?.extraHosts);
+
   const nodes = data?.nodes;
   if (!Array.isArray(nodes) || nodes.length === 0) return;
 
@@ -485,8 +499,16 @@ async function loadMetrics() {
   // On first load: replace skeletons
   if (grid.querySelector('.node-skeleton')) grid.innerHTML = '';
 
-  nodes.forEach(node => {
-    const id = `node-${node.hostname.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+  renderHostCards(grid, nodes, 'node');
+}
+
+// Shared by the Swarm grid and the standalone grid. `prefix` keeps the element
+// ids from colliding — a Swarm node and a standalone host could in principle
+// carry the same hostname, and two elements with one id would make the second
+// card silently update the first.
+function renderHostCards(grid, hosts, prefix) {
+  hosts.forEach(host => {
+    const id = `${prefix}-${host.hostname.replace(/[^a-zA-Z0-9-]/g, '-')}`;
     let card = document.getElementById(id);
     const wasOnline = card?.dataset.online === '1';
     if (!card) {
@@ -494,16 +516,42 @@ async function loadMetrics() {
       card.id = id;
       grid.appendChild(card);
     }
-    if (wasOnline && node.online) {
+    if (wasOnline && host.online) {
       // Same online state as last poll — update values in place so gauge/bar
       // transitions animate instead of popping to the new reading instantly.
-      updateNodeMetrics(card, node);
+      updateNodeMetrics(card, host);
     } else {
-      card.className = `node-card${node.online ? '' : ' offline'}`;
-      card.innerHTML = nodeCardHtml(node);
-      card.dataset.online = node.online ? '1' : '0';
+      const extra = prefix === 'infra' ? ' node-card-infra' : '';
+      card.className = `node-card${extra}${host.online ? '' : ' offline'}`;
+      card.innerHTML = nodeCardHtml(host);
+      card.dataset.online = host.online ? '1' : '0';
     }
   });
+}
+
+// Standalone hosts are deliberately NOT folded into the nodes count above: they
+// are not Swarm members, and counting them would turn "nodes online" into a
+// number that no longer describes the cluster.
+function renderExtraHosts(extraHosts) {
+  const grid   = document.getElementById('infraGrid');
+  const header = document.getElementById('infraHeader');
+  const card   = document.getElementById('infraCard');
+  if (!grid || !header || !card) return;
+
+  // No EXTRA_HOSTS configured — leave the section out entirely rather than
+  // showing an empty heading.
+  if (!Array.isArray(extraHosts) || extraHosts.length === 0) {
+    grid.hidden = header.hidden = card.hidden = true;
+    return;
+  }
+  grid.hidden = header.hidden = card.hidden = false;
+
+  const online = extraHosts.filter(h => h.online).length;
+  const el = document.getElementById('infraOnline');
+  setTextAnimated(el, `${online}/${extraHosts.length}`);
+  el.style.color = online === extraHosts.length ? '' : online > 0 ? 'var(--amber,#ff9f0a)' : 'var(--red)';
+
+  renderHostCards(grid, extraHosts, 'infra');
 }
 
 // ================================================================
@@ -557,7 +605,9 @@ function buildCard(s) {
 function buildAddCard() {
   const el = document.createElement('div');
   el.className='service-card add-card'; el.style.cursor='pointer';
-  el.innerHTML=`<div class="card-icon"><i class="ti ti-plus"></i></div><span class="card-name">Dienst hinzufügen</span>`;
+  // Was a hardcoded German literal — this card is rebuilt on every language
+  // change, so it stayed German in the English UI.
+  el.innerHTML=`<div class="card-icon"><i class="ti ti-plus"></i></div><span class="card-name">${esc(t('svc.add'))}</span>`;
   el.addEventListener('click', () => openModal());
   return el;
 }
@@ -1177,7 +1227,9 @@ function renderGreeting() {
 window.addEventListener('languagechange:zs', () => {
   const active = id => document.getElementById(id)?.classList.contains('active');
   renderGreeting();
-  if (active('view-home')) { loadStatus(); loadServices(); loadBackupStatus(); }
+  // loadMetrics too: the node cards carry one translated string ("unreachable"),
+  // and without this an offline card keeps the language it was rendered in.
+  if (active('view-home')) { loadStatus(); loadServices(); loadBackupStatus(); loadMetrics(); }
   if (active('view-einstellungen') && userRole === 'admin') { loadUsers(); loadInvites(); }
   // Skipped while locked: loadVault() would only re-trigger the 403 path.
   if (active('view-vault') && vaultUnlocked) loadVault();

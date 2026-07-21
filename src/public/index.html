@@ -107,6 +107,16 @@
                 <div class="status-label" data-i18n="home.clusterStatus">Cluster-Status</div>
               </div>
             </div>
+            <!-- Standalone hosts, counted separately from the Swarm nodes.
+                 Hidden until /api/metrics reports at least one, so an install
+                 without EXTRA_HOSTS shows no empty tile. -->
+            <div class="status-card" id="infraCard" hidden>
+              <div class="status-icon"><i class="ti ti-database"></i></div>
+              <div>
+                <div class="status-value" id="infraOnline">—</div>
+                <div class="status-label" data-i18n="home.infra">Infrastruktur</div>
+              </div>
+            </div>
             <div class="status-card backup-card" id="backupCard" data-i18n-title="home.nodeDetails">
               <div class="backup-card-main">
                 <div class="status-icon"><i class="ti ti-device-floppy"></i></div>
@@ -128,6 +138,14 @@
             <div class="node-skeleton"></div>
             <div class="node-skeleton"></div>
           </div>
+
+          <!-- Machines outside the Swarm (database, storage). Same card, own
+               section — they are not cluster members and must not read as if
+               they were. -->
+          <div class="section-header" id="infraHeader" style="margin-top:32px" hidden>
+            <h2 data-i18n="home.standaloneHosts">Standalone-Hosts</h2>
+          </div>
+          <div class="node-grid" id="infraGrid" hidden></div>
 
           <div class="section-header" style="margin-top:32px">
             <h2 data-i18n="home.services">Dienste</h2>

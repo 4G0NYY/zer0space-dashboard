@@ -871,6 +871,41 @@ async function fetchGlancesV4(ip, endpoint) {
   }
 }
 
+// ---- Standalone hosts ----
+//
+// Not every machine worth watching is a Swarm node. zs-state-01 (Postgres) and
+// zs-store-01 (NFS) deliberately sit outside the cluster, so they never appear
+// in /nodes and were invisible here — which is backwards, since the database and
+// the shared storage are the two hosts whose failure takes everything else with
+// them.
+//
+// Format: EXTRA_HOSTS=name:ip[:label],name:ip[:label]
+// The label is free text shown as a badge on the card ("Stateful", "Storage");
+// it defaults to nothing. Glances must be reachable on GLANCES_PORT, same as on
+// the Swarm nodes.
+function parseExtraHosts(raw) {
+  if (!raw || !raw.trim()) return [];
+  const out = [];
+  for (const entry of raw.split(',')) {
+    const part = entry.trim();
+    if (!part) continue;
+    const [name, addr, label] = part.split(':').map(s => (s || '').trim());
+    if (!name || !addr) {
+      // Loud but non-fatal: one malformed entry must not cost the whole list,
+      // and it must not take the dashboard down at boot either.
+      console.error(`[metrics] EXTRA_HOSTS: ignoring malformed entry "${part}" (expected name:ip[:label])`);
+      continue;
+    }
+    out.push({ hostname: name, addr, label: label || null });
+  }
+  return out;
+}
+
+const EXTRA_HOSTS = parseExtraHosts(process.env.EXTRA_HOSTS);
+if (EXTRA_HOSTS.length) {
+  console.log(`[metrics] standalone hosts: ${EXTRA_HOSTS.map(h => `${h.hostname}(${h.addr})`).join(', ')}`);
+}
+
 // Glances v4 may return fs/network as dict (keyed by mount/interface) or array — handle both.
 function gatherDisk(data) {
   const items = Array.isArray(data)
@@ -894,12 +929,49 @@ function gatherNet(data) {
   return { rx_rate: rxRate, tx_rate: txRate };
 }
 
+// One host's full metric set. Shared by Swarm nodes and standalone hosts so the
+// two can never drift apart in what they report — the frontend renders them with
+// the same card, and a difference here would show up as a half-empty card.
+async function pollHost({ hostname, addr, label = null }) {
+  if (!addr) return { hostname, label, online: false };
+  try {
+    const [system, cpu, mem, fsData, network] = await Promise.all([
+      fetchGlancesV4(addr, 'system'),
+      fetchGlancesV4(addr, 'cpu'),
+      fetchGlancesV4(addr, 'mem'),
+      fetchGlancesV4(addr, 'fs'),
+      fetchGlancesV4(addr, 'network'),
+    ]);
+    // Guard against old container IDs (pre-redeploy): 12- or 64-char hex strings.
+    const gh = system?.hostname;
+    const glancesHostname = (gh && !/^[0-9a-f]{12,64}$/i.test(gh)) ? gh : null;
+    return {
+      hostname: hostname || glancesHostname || addr,
+      label,
+      online: true,
+      cpu:  cpu.total ?? null,
+      mem:  { used: mem.used, total: mem.total, percent: mem.percent },
+      disk: gatherDisk(fsData),
+      net:  gatherNet(network),
+    };
+  } catch {
+    console.log(`[metrics] OFFLINE ${hostname} (${addr})`);
+    return { hostname, label, online: false };
+  }
+}
+
 app.get('/api/metrics', async (_req, res) => {
   // Two fresh queries every poll, no cached state between calls.
   // /nodes → authoritative hostname list + Status.Addr (node LAN-IP), total count.
   // /tasks → which nodes have a running Glances task (by NodeID).
   // Glances runs with endpoint_mode:host, port 61208 bound directly on the host NIC.
   // No overlay IP or DNS lookup needed — Status.Addr is the stable LAN address.
+
+  // Standalone hosts are polled directly and do not involve the Docker proxy, so
+  // this starts before the proxy call and survives it failing. That is the whole
+  // point: when the Swarm is in trouble, the database and storage hosts are
+  // precisely the ones you still want to see.
+  const extraPromise = Promise.all(EXTRA_HOSTS.map(pollHost));
 
   let swarmNodes = [], glancesTasks = [];
   try {
@@ -911,7 +983,12 @@ app.get('/api/metrics', async (_req, res) => {
     swarmNodes   = await nodesRes.json();
     glancesTasks = await tasksRes.json();
   } catch {
-    return res.status(503).json({ nodes: [], error: 'Docker proxy unavailable', code: 'PROXY_UNAVAILABLE' });
+    return res.status(503).json({
+      nodes: [],
+      extraHosts: await extraPromise,
+      error: 'Docker proxy unavailable',
+      code: 'PROXY_UNAVAILABLE',
+    });
   }
 
   // nodeID → { hostname, addr } — addr = node's management/LAN IP from Swarm
@@ -937,37 +1014,18 @@ app.get('/api/metrics', async (_req, res) => {
 
   // Query each live node via its LAN IP: metrics + /system for hostname confirmation.
   // Hostname priority: Swarm Description.Hostname → Glances system.hostname → raw IP.
-  const agentResults = await Promise.all(
-    liveEntries.map(async ([, { hostname, addr }]) => {
-      if (!addr) return { hostname, online: false };
-      try {
-        const [system, cpu, mem, fsData, network] = await Promise.all([
-          fetchGlancesV4(addr, 'system'),
-          fetchGlancesV4(addr, 'cpu'),
-          fetchGlancesV4(addr, 'mem'),
-          fetchGlancesV4(addr, 'fs'),
-          fetchGlancesV4(addr, 'network'),
-        ]);
-        // Guard against old container IDs (pre-redeploy): 12- or 64-char hex strings.
-        const gh = system?.hostname;
-        const glancesHostname = (gh && !/^[0-9a-f]{12,64}$/i.test(gh)) ? gh : null;
-        return {
-          hostname: hostname || glancesHostname || addr, online: true,
-          cpu:  cpu.total ?? null,
-          mem:  { used: mem.used, total: mem.total, percent: mem.percent },
-          disk: gatherDisk(fsData),
-          net:  gatherNet(network),
-        };
-      } catch {
-        console.log(`[metrics] OFFLINE ${hostname} (${addr})`);
-        return { hostname, online: false };
-      }
-    })
-  );
+  const [agentResults, extraResults] = await Promise.all([
+    Promise.all(liveEntries.map(([, info]) => pollHost(info))),
+    extraPromise,
+  ]);
 
   const responded = agentResults.filter(r => r.online).length;
   console.log(`[metrics] responded: ${responded}/${liveEntries.length} — ` +
     agentResults.map(r => `${r.hostname}:${r.online ? 'ok' : 'OFFLINE'}`).join(' '));
+  if (extraResults.length) {
+    console.log(`[metrics] standalone: ${extraResults.filter(r => r.online).length}/${extraResults.length} — ` +
+      extraResults.map(r => `${r.hostname}:${r.online ? 'ok' : 'OFFLINE'}`).join(' '));
+  }
 
   // Swarm nodes not in agentResults → truly offline (no running task or addr missing).
   const coveredHostnames = new Set(agentResults.map(r => r.hostname));
@@ -977,7 +1035,12 @@ app.get('/api/metrics', async (_req, res) => {
 
   const results = [...agentResults, ...offlineResults];
   results.sort((a, b) => a.hostname.localeCompare(b.hostname));
-  res.json({ nodes: results });
+
+  // Kept in a separate key rather than merged into `nodes`: these are not Swarm
+  // members, and folding them in would quietly inflate the "nodes online X/Y"
+  // tile into a number that no longer describes the cluster.
+  extraResults.sort((a, b) => a.hostname.localeCompare(b.hostname));
+  res.json({ nodes: results, extraHosts: extraResults });
 });
 
 // ---- Backup status ----

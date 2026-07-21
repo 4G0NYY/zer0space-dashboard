@@ -373,10 +373,25 @@ body::after {
 }
 .greeting p { color: var(--text-2); font-size: 14px; }
 
+/* The `hidden` attribute is not self-enforcing here. Browsers implement it as
+   `[hidden] { display: none }` in the UA stylesheet, which ANY author rule
+   setting `display` overrides — and .status-card, .node-grid and .section-header
+   all set one. Without these, marking the Infrastructure tile hidden did
+   nothing and an install without EXTRA_HOSTS showed an empty "—" tile.
+   The attribute selector (0-2-0) beats the bare class (0-1-0), so no
+   !important is needed. */
+.status-card[hidden],
+.node-grid[hidden],
+.section-header[hidden] { display: none; }
+
 /* ---- Status Grid ---- */
+/* auto-fit rather than a fixed four columns: the Infrastructure tile only exists
+   when EXTRA_HOSTS is configured, so the card count is 4 or 5 depending on the
+   deployment. Hard-coding four left the fifth card stranded alone on a second
+   row. */
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 12px;
   margin-bottom: 32px;
 }
@@ -472,6 +487,7 @@ body::after {
 .status-grid .status-card:nth-child(2) .status-icon { animation-delay: 0.7s; }
 .status-grid .status-card:nth-child(3) .status-icon { animation-delay: 1.4s; }
 .status-grid .status-card:nth-child(4) .status-icon { animation-delay: 2.1s; }
+.status-grid .status-card:nth-child(5) .status-icon { animation-delay: 2.8s; }
 @keyframes iconBreathe {
   0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
   50%       { box-shadow: 0 0 16px var(--accent-glow); }
@@ -1349,17 +1365,54 @@ body:not(.is-admin) .add-card     { display: none !important; }
 .node-card:hover { border-color: color-mix(in srgb, var(--accent) 38%, transparent); transform: translateY(-2px); }
 .node-card.offline { opacity: 0.5; }
 
+/* flex-start + auto margin on the dot rather than space-between: standalone-host
+   cards carry a third child (the badge), and space-between would strand it in
+   the middle of the header instead of beside the name. The two-child Swarm card
+   renders identically either way. */
 .node-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 8px;
   margin-bottom: 14px;
+}
+.node-header .dot { margin-left: auto; flex-shrink: 0; }
+
+/* Role badge from EXTRA_HOSTS ("Stateful", "Storage"). */
+.node-badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.07);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Standalone hosts: same card, distinguishable at a glance. A left edge rather
+   than a full border — the cards sit in their own section already, so this is a
+   reminder of what they are, not a warning. */
+.node-card-infra {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.node-card-infra .node-badge {
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 .node-name {
   font-size: 13px;
   font-weight: 600;
   font-family: var(--mono);
   color: var(--text-1);
+  /* A long hostname must give way to the badge and dot rather than pushing them
+     out of the card. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-offline-msg {

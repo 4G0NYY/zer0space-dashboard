@@ -10,6 +10,17 @@ services:
       - FORCE_HTTPS=${FORCE_HTTPS:-false}
       - GLANCES_SERVICE=${GLANCES_SERVICE:-dashboard_glances}
       - GLANCES_PORT=${GLANCES_PORT:-61208}
+      # ── Standalone hosts (not Swarm members) ───────────────────────────────────────────
+      # Machines that run Glances but are deliberately outside the cluster, so they never
+      # appear in the Docker API's /nodes and would otherwise go unmonitored — which is
+      # backwards, since the database and the shared storage are the two hosts whose
+      # failure takes everything else with them.
+      #
+      # Format: name:ip[:label]   (comma-separated; label is a free-text badge)
+      # Each host needs Glances reachable on GLANCES_PORT.
+      # Shown in their own "Standalone-Hosts" section and counted separately from
+      # the Swarm nodes.
+      - EXTRA_HOSTS=${EXTRA_HOSTS:-zs-state-01:192.168.0.16:Stateful,zs-store-01:192.168.0.15:Storage}
       # ── Admin account ──────────────────────────────────────────────────────────────────
       # There are no admin credentials here any more. On a fresh database the
       # dashboard serves a setup wizard at /setup where the first administrator is

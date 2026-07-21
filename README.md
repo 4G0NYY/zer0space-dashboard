@@ -90,6 +90,7 @@ for the full list with comments. The essentials:
 | `COOKIE_SECURE` / `FORCE_HTTPS` | Enable when running behind HTTPS (Cloudflare Tunnel) |
 | `TRUST_PROXY` | Read the client IP from `cf-connecting-ip`; `true` behind the tunnel, `false` if exposed directly |
 | `GLANCES_SERVICE` / `GLANCES_PORT` | Where to collect host metrics from |
+| `EXTRA_HOSTS` | Non-Swarm machines to monitor, `name:ip[:label]` comma-separated (e.g. the database and storage hosts) |
 | `DOCKER_PROXY_URL` | Read-only Docker socket proxy endpoint |
 | `TZ` | Container timezone |
 
