@@ -29,7 +29,15 @@ form.addEventListener('submit', async (e) => {
       window.location.href = '/';
     } else {
       const data = await res.json().catch(() => ({}));
-      errorMsg.textContent = I18N.tError(data, 'login.invalid');
+      // 429 (rate limited) and 423 (account locked) both carry a wait time. Every
+      // other failure resolves to the one generic "wrong username or password" —
+      // the server does not distinguish them and neither should this.
+      if ((res.status === 429 || res.status === 423) && data.retryAfterMinutes) {
+        const key = res.status === 423 ? 'err.ACCOUNT_LOCKED_MIN' : 'err.RATE_LIMITED_MIN';
+        errorMsg.textContent = t(key, { n: data.retryAfterMinutes });
+      } else {
+        errorMsg.textContent = I18N.tError(data, 'login.invalid');
+      }
       errorMsg.classList.add('visible');
       resetButton();
       document.getElementById('password').value = '';

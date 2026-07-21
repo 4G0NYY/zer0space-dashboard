@@ -3,12 +3,12 @@
 const express = require('express');
 const helmet  = require('helmet');
 const session = require('express-session');
-const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const db = require('./db');
+const auth = require('./auth');
 const vaultCrypto = require('./vault-crypto');
 const createVaultRouter = require('./routes/vault');
 
@@ -36,34 +36,21 @@ const readSecret = db.readSecret;
 // wrapper a failed query becomes an unhandled rejection instead of a response.
 const ah = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// ---- First-run: seed admin ----
-// Runs ONLY when the users table is completely empty (fresh DB).
-// After that, DASHBOARD_USER / DASHBOARD_HASH / DASHBOARD_PASS are NEVER read again.
-// All password changes via the UI are written to the DB and are permanent.
-async function seedAdmin() {
+// ---- First run ----
+// There is no environment-seeded admin any more. On an empty users table the
+// server serves the /setup wizard instead of the login page, and the first admin
+// is created there — so the initial password is typed into a browser form,
+// hashed immediately, and never exists as an environment variable, in the
+// compose file, in Portainer's UI, or in a shell history.
+//
+// Deliberately NOT cached in a module variable: /setup must seal itself the
+// instant the first account exists, and a cached "true" would keep the wizard
+// open until the next restart.
+async function noUsersYet() {
   // COUNT(*) comes back as a bigint, which node-postgres returns as a STRING.
   // The ::int cast keeps this an actual number (a plain === 0 would never match).
-  const { c: userCount } = await db.one('SELECT COUNT(*)::int AS c FROM users');
-  if (userCount !== 0) return;
-
-  const adminUser = process.env.DASHBOARD_USER;
-  // Priority: Docker Secret / DASHBOARD_HASH (pre-computed bcrypt, preferred for production)
-  //        → DASHBOARD_PASS (plaintext, hashed here at runtime, simpler for first-run setup)
-  let adminHash = readSecret('dashboard_hash', 'DASHBOARD_HASH');
-  if (!adminHash && process.env.DASHBOARD_PASS) {
-    adminHash = bcrypt.hashSync(process.env.DASHBOARD_PASS, 12);
-    console.log('[dashboard] DASHBOARD_PASS used — hashed at runtime. Use DASHBOARD_HASH for production.');
-  }
-  if (adminUser && adminHash) {
-    if (!adminHash.startsWith('$2')) {
-      console.error('[dashboard] DASHBOARD_HASH does not look like a bcrypt hash ($2...). Admin NOT created.');
-    } else {
-      await db.query('INSERT INTO users (username, hash, role) VALUES ($1, $2, $3)', [adminUser, adminHash, 'admin']);
-      console.log(`[dashboard] Initial admin created: ${adminUser}`);
-    }
-  } else {
-    console.error('[dashboard] WARNING: Set DASHBOARD_USER + DASHBOARD_PASS (or DASHBOARD_HASH) to create the initial admin.');
-  }
+  const { c } = await db.one('SELECT COUNT(*)::int AS c FROM users');
+  return c === 0;
 }
 
 // ---- Session secret ----
@@ -93,46 +80,14 @@ async function getSessionSecret() {
   return rows[0].value;
 }
 
-// ---- Brute-force rate limiting (in-memory) ----
-
-const loginAttempts = new Map(); // key: `ip:username` → { count, windowStart, lockedUntil }
-const RATE_MAX    = 5;
-const RATE_WINDOW = 10 * 60_000; // 10 min window
-const RATE_LOCK   = 15 * 60_000; // 15 min lockout
-
-function getRateKey(req, username) {
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-           || req.socket?.remoteAddress || 'unknown';
-  return `${ip}:${username.toLowerCase()}`;
-}
-
-function checkRateLimit(key) {
-  const now = Date.now();
-  const e = loginAttempts.get(key);
-  if (!e) return null;
-  if (now < e.lockedUntil) return { locked: true, remaining: e.lockedUntil - now };
-  if (now - e.windowStart > RATE_WINDOW) { loginAttempts.delete(key); return null; }
-  return null;
-}
-
-function recordFailure(key) {
-  const now = Date.now();
-  const e = loginAttempts.get(key) || { count: 0, windowStart: now, lockedUntil: 0 };
-  if (now - e.windowStart > RATE_WINDOW) { e.count = 0; e.windowStart = now; e.lockedUntil = 0; }
-  e.count++;
-  if (e.count >= RATE_MAX) e.lockedUntil = now + RATE_LOCK;
-  loginAttempts.set(key, e);
-}
-
-function clearFailures(key) { loginAttempts.delete(key); }
-
-// Periodic cleanup so the map doesn't grow unbounded
+// Rate limiting, account lockout and the password policy now live in auth.js and
+// are backed by the login_attempts table rather than by a Map in this process —
+// see the comment at the top of that file for why.
+//
+// Trim the attempt log daily so it stays an audit trail rather than a landfill.
 setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of loginAttempts) {
-    if (now > Math.max(v.lockedUntil, v.windowStart + RATE_WINDOW)) loginAttempts.delete(k);
-  }
-}, 30 * 60_000);
+  auth.pruneLoginAttempts().catch(err => console.error(`[auth] prune failed: ${err.message}`));
+}, 24 * 60 * 60_000).unref?.();
 
 // ---- Multer for background upload ----
 
@@ -192,8 +147,17 @@ app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {
   immutable: false,
 }));
 
-// { index: false } prevents express.static from auto-serving index.html for GET /
-// without a session. The SPA root is served explicitly below, behind requireAuth.
+// { index: false } stops express.static from auto-serving index.html for GET /
+// without a session, but it does NOT stop an explicit GET /index.html — and the
+// same goes for setup.html and register.html, which have their own gated routes
+// below. Block the direct filenames so those gates cannot be walked around by
+// asking for the file instead of the path.
+const GATED_PAGES = new Set(['/index.html', '/setup.html', '/register.html', '/login.html']);
+app.use((req, res, next) => {
+  if (GATED_PAGES.has(req.path)) return res.status(404).end();
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // The session middleware needs its secret up front, but the secret may have to be
@@ -227,32 +191,204 @@ function requireAdmin(req, res, next) {
 
 // ---- Public routes ----
 
-// login.js must be reachable before auth so the login page can load it.
-app.get('/login.js', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'login.js')));
+// These scripts must be reachable before auth so the unauthenticated pages can
+// load them.
+for (const f of ['login.js', 'setup.js', 'register.js', 'password-strength.js']) {
+  app.get(`/${f}`, (_req, res) => res.sendFile(path.join(__dirname, 'public', f)));
+}
 
-app.get('/login', (req, res) => {
+app.get('/login', ah(async (req, res) => {
   if (req.session?.userId) return res.redirect('/');
+  // A fresh install has no account to log into — send the operator to the wizard
+  // rather than to a form that cannot succeed.
+  if (await noUsersYet()) return res.redirect('/setup');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
+}));
+
+// ---- Setup wizard ----
+// Reachable only while the users table is empty. Once the first admin exists
+// this 404s forever, which is what makes it safe to leave unauthenticated.
+
+app.get('/setup', ah(async (req, res) => {
+  if (!await noUsersYet()) return res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+}));
+
+app.post('/api/setup', ah(async (req, res) => {
+  const { username, password } = req.body || {};
+
+  const bad = auth.usernameProblem(username) || auth.passwordProblem(password);
+  if (bad) return res.status(400).json(bad);
+
+  // The empty-table check and the INSERT run in one transaction with the table
+  // locked. Two operators hitting /setup at the same moment on a fresh install
+  // would otherwise both pass the check and both become admin.
+  const created = await db.tx(async (client) => {
+    await client.query('LOCK TABLE users IN EXCLUSIVE MODE');
+    const { rows } = await client.query('SELECT COUNT(*)::int AS c FROM users');
+    if (rows[0].c !== 0) return null;
+    const hash = await auth.hashPassword(password);
+    const { rows: ins } = await client.query(
+      `INSERT INTO users (username, hash, role) VALUES ($1, $2, 'admin')
+       RETURNING id, username, role`,
+      [username.trim(), hash]
+    );
+    return ins[0];
+  });
+
+  if (!created) {
+    // Somebody won the race, or the wizard was replayed. Never say more than
+    // this — /setup being closed is all the caller is entitled to know.
+    return res.status(403).json({ error: 'Setup is already complete', code: 'SETUP_CLOSED' });
+  }
+
+  console.log(`[dashboard] Setup complete — initial admin '${created.username}' created`);
+  res.status(201).json({ ok: true });
+}));
+
+// ---- Registration by invite ----
+
+app.get('/register', ah(async (req, res) => {
+  if (req.session?.userId) return res.redirect('/');
+  if (await noUsersYet()) return res.redirect('/setup');
+  // The page renders regardless of whether the code is valid: telling an
+  // anonymous visitor "this code does not exist" turns the page into an oracle
+  // for probing the code space. Validation happens in POST /api/register, which
+  // is rate limited.
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+}));
+
+app.post('/api/register', ah(async (req, res) => {
+  const started = Date.now();
+  const ip = auth.clientIp(req);
+  const { code, username, password } = req.body || {};
+
+  // Every failure below returns this exact response. An attacker must not be
+  // able to tell "no such code" from "expired", "already used" or "username
+  // taken" — each of those distinctions leaks something.
+  const reject = async () => {
+    await auth.recordAttempt({ username: username || '', ip, success: false, kind: 'register' });
+    await auth.padTiming(started);
+    return res.status(400).json({ error: 'Invitation code invalid or expired', code: 'INVITE_INVALID' });
+  };
+
+  const blocked = await auth.checkRegisterRateLimit(ip);
+  if (blocked) {
+    await auth.padTiming(started);
+    return res.status(429).json({
+      error: 'Too many attempts. Try again later.',
+      code: 'RATE_LIMITED',
+      retryAfterMinutes: Math.ceil(blocked.remaining / 60_000),
+    });
+  }
+
+  // Input problems are reported honestly — the client needs to be able to fix
+  // them, and none of them reveal anything about the invite.
+  const bad = auth.usernameProblem(username) || auth.passwordProblem(password);
+  if (bad) return res.status(400).json(bad);
+  if (typeof code !== 'string' || !/^[a-f0-9]{32}$/.test(code)) return reject();
+
+  const outcome = await db.tx(async (client) => {
+    // FOR UPDATE so two people redeeming the same code at once cannot both win.
+    const { rows } = await client.query(
+      `SELECT id, expires_at, used_by, max_role FROM invite_codes
+        WHERE code = $1 FOR UPDATE`,
+      [code]
+    );
+    const invite = rows[0];
+    if (!invite) return 'invalid';
+    if (invite.used_by) return 'invalid';
+    if (new Date(invite.expires_at).getTime() <= Date.now()) return 'invalid';
+
+    const role = invite.max_role === 'admin' ? 'admin' : 'viewer';
+    const hash = await auth.hashPassword(password);
+    const { rows: ins } = await client.query(
+      `INSERT INTO users (username, hash, role) VALUES ($1, $2, $3)
+       ON CONFLICT (username) DO NOTHING
+       RETURNING id`,
+      [username.trim(), hash, role]
+    );
+    if (!ins[0]) return 'invalid'; // username taken — same generic answer
+
+    await client.query(
+      'UPDATE invite_codes SET used_by = $1, used_at = NOW() WHERE id = $2',
+      [ins[0].id, invite.id]
+    );
+    return 'ok';
+  });
+
+  if (outcome !== 'ok') return reject();
+
+  await auth.recordAttempt({ username, ip, success: true, kind: 'register' });
+  await auth.padTiming(started);
+  console.log(`[dashboard] New account '${username.trim()}' registered via invite`);
+  res.status(201).json({ ok: true });
+}));
 
 app.post('/api/login', ah(async (req, res) => {
+  const started = Date.now();
+  const ip = auth.clientIp(req);
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Input missing', code: 'INPUT_MISSING' });
 
-  const key = getRateKey(req, username);
-  const rate = checkRateLimit(key);
-  if (rate?.locked) {
-    const mins = Math.ceil(rate.remaining / 60_000);
-    return res.status(429).json({ error: `Zu viele Versuche. Bitte ${mins} Minute(n) warten.` });
+  // Every rejection past this point answers with the same body and the same
+  // elapsed time, so the response cannot be used to enumerate usernames or to
+  // discover which accounts are locked.
+  const genericFail = async () => {
+    await auth.padTiming(started);
+    return res.status(401).json({ error: 'Wrong username or password', code: 'BAD_CREDENTIALS' });
+  };
+
+  // Checked BEFORE anything is recorded: a blocked caller must not be able to
+  // extend its own block by continuing to hammer the endpoint.
+  const blocked = await auth.checkLoginRateLimit(ip, username);
+  if (blocked) {
+    await auth.padTiming(started);
+    return res.status(429).json({
+      error: 'Too many attempts. Try again later.',
+      code: 'RATE_LIMITED',
+      retryAfterMinutes: Math.ceil(blocked.remaining / 60_000),
+    });
   }
 
   const user = await db.one('SELECT * FROM users WHERE username = $1', [username]);
-  if (!user || !bcrypt.compareSync(password, user.hash)) {
-    recordFailure(key);
-    return res.status(401).json({ error: 'Wrong username or password', code: 'BAD_CREDENTIALS' });
+
+  // Run the password check even when the account is locked or does not exist,
+  // so all three paths cost one bcrypt round.
+  const passwordOk = await auth.verifyPassword(password, user?.hash);
+
+  if (auth.isLocked(user)) {
+    await auth.recordAttempt({ username, ip, success: false });
+    // The one non-generic case, and only for a caller who already proved they
+    // know the password: without it a locked-out user has no way to understand
+    // why a correct password keeps failing.
+    if (passwordOk) {
+      await auth.padTiming(started);
+      const mins = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60_000);
+      return res.status(423).json({
+        error: 'Account temporarily locked after repeated failed logins',
+        code: 'ACCOUNT_LOCKED',
+        retryAfterMinutes: Math.max(1, mins),
+      });
+    }
+    return genericFail();
   }
 
-  clearFailures(key);
+  if (!user || !passwordOk) {
+    await auth.recordAttempt({ username, ip, success: false });
+    await auth.registerFailedLogin(user);
+    return genericFail();
+  }
+
+  await auth.recordAttempt({ username, ip, success: true });
+  await auth.clearFailedLogins(user.id);
+
+  // Session fixation: an attacker who can set a session cookie before login
+  // would otherwise still hold a valid one after it. Issue a new session id.
+  await new Promise((resolve, reject) =>
+    req.session.regenerate(err => (err ? reject(err) : resolve()))
+  );
+
   req.session.userId   = user.id;
   req.session.username = user.username;
   req.session.role     = user.role || 'viewer';
@@ -267,9 +403,9 @@ app.post('/api/login', ah(async (req, res) => {
   }
   req.session.vaultKey = vaultCrypto.deriveVaultKey(password, vaultSalt).toString('base64');
 
-  // CSRF token for state-changing vault requests (double-submit pattern —
-  // see routes/vault.js). Generated once per session, returned via /api/me.
-  if (!req.session.csrfToken) req.session.csrfToken = crypto.randomBytes(32).toString('hex');
+  // CSRF token for every state-changing request (double-submit pattern).
+  // Generated once per session, handed to the client via /api/me.
+  auth.issueCsrfToken(req.session);
 
   res.json({ ok: true, role: user.role });
 }));
@@ -281,6 +417,12 @@ app.post('/api/logout', (req, res) => {
 // ---- Protected zone ----
 
 app.use(requireAuth);
+
+// CSRF applies to everything below this line — every authenticated POST, PUT and
+// DELETE, not just the vault. It sits after requireAuth because it needs a
+// session to compare against; the three unauthenticated POST endpoints above are
+// covered by sameSite: 'strict' plus their own rate limits (see auth.js).
+app.use(auth.csrfProtection);
 
 // SPA root — only reachable after requireAuth passes (valid dashboard session).
 // Cloudflare Access alone is not sufficient; a real dashboard login is required.
@@ -302,9 +444,10 @@ app.get('/api/me', ah(async (req, res) => {
 app.post('/api/change-password', ah(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Fields missing', code: 'FIELDS_MISSING' });
-  if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
+  const bad = auth.passwordProblem(newPassword);
+  if (bad) return res.status(400).json(bad);
   const user = await db.one('SELECT * FROM users WHERE id = $1', [req.session.userId]);
-  if (!user || !bcrypt.compareSync(currentPassword, user.hash))
+  if (!user || !await auth.verifyPassword(currentPassword, user.hash))
     return res.status(401).json({ error: 'Current password is wrong', code: 'PW_CURRENT_WRONG' });
 
   // Self-service password change is the ONE place we still hold both the old
@@ -336,7 +479,7 @@ app.post('/api/change-password', ah(async (req, res) => {
     }
     await client.query(
       'UPDATE users SET hash = $1, vault_salt = $2 WHERE id = $3',
-      [bcrypt.hashSync(newPassword, 12), newSalt, user.id]
+      [await auth.hashPassword(newPassword), newSalt, user.id]
     );
   });
 
@@ -487,16 +630,96 @@ app.delete('/api/background', requireAdmin, ah(async (_req, res) => {
   res.json({ ok: true });
 }));
 
+// Invitations (admin only)
+//
+// After setup, an invite code is the ONLY way an account can come into
+// existence — there is no open registration and no admin-set password for a new
+// user, so a new user's password is never known to anyone but themselves.
+
+app.post('/api/invite', requireAdmin, ah(async (req, res) => {
+  const { expiresInDays, maxRole } = req.body || {};
+
+  const days = Number.isFinite(Number(expiresInDays)) ? Number(expiresInDays) : 7;
+  if (days < 1 || days > 90) {
+    return res.status(400).json({ error: 'Expiry must be between 1 and 90 days', code: 'INVITE_EXPIRY_INVALID' });
+  }
+  const role = maxRole === 'admin' ? 'admin' : 'viewer';
+
+  const row = await db.one(
+    `INSERT INTO invite_codes (code, created_by, expires_at, max_role)
+     VALUES ($1, $2, NOW() + ($3 || ' days')::interval, $4)
+     RETURNING id, code, created_at, expires_at, max_role`,
+    [auth.newInviteCode(), req.session.userId, String(days), role]
+  );
+  console.log(`[dashboard] Invite created by '${req.session.username}' (role ${role}, ${days}d)`);
+  res.status(201).json(row);
+}));
+
+app.get('/api/invites', requireAdmin, ah(async (_req, res) => {
+  const rows = await db.all(
+    `SELECT i.id, i.code, i.created_at, i.expires_at, i.used_at, i.max_role,
+            c.username AS created_by_name,
+            u.username AS used_by_name,
+            CASE
+              WHEN i.used_by IS NOT NULL   THEN 'used'
+              WHEN i.expires_at <= NOW()   THEN 'expired'
+              ELSE 'active'
+            END AS status
+       FROM invite_codes i
+       LEFT JOIN users c ON c.id = i.created_by
+       LEFT JOIN users u ON u.id = i.used_by
+      ORDER BY i.created_at DESC`
+  );
+  res.json(rows);
+}));
+
+app.delete('/api/invite/:id', requireAdmin, ah(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
+  // A redeemed code is kept: it is the audit record of how an account came to
+  // exist. Only unredeemed ones can be revoked.
+  const { rowCount } = await db.query('DELETE FROM invite_codes WHERE id = $1 AND used_by IS NULL', [id]);
+  if (!rowCount) return res.status(404).json({ error: 'Invite not found or already redeemed', code: 'INVITE_NOT_FOUND' });
+  res.json({ ok: true });
+}));
+
+// Login audit trail (admin only) — lets an admin see whether anyone is knocking.
+app.get('/api/login-attempts', requireAdmin, ah(async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const rows = await db.all(
+    `SELECT username, ip, success, kind, created_at
+       FROM login_attempts ORDER BY created_at DESC LIMIT $1`,
+    [limit]
+  );
+  res.json(rows);
+}));
+
 // User management (admin only)
 
 app.get('/api/users', requireAdmin, ah(async (_req, res) => {
-  res.json(await db.all('SELECT id, username, role FROM users ORDER BY id'));
+  res.json(await db.all(
+    `SELECT id, username, role, failed_attempts,
+            CASE WHEN locked_until > NOW() THEN locked_until ELSE NULL END AS locked_until
+       FROM users ORDER BY id`
+  ));
+}));
+
+// Clear a lockout early. The lock also expires on its own (see auth.js), so this
+// is a convenience rather than the only way out.
+app.post('/api/users/:id/unlock', requireAdmin, ah(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
+  const { rowCount } = await db.query(
+    'UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1', [id]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+  res.json({ ok: true });
 }));
 
 app.post('/api/users', requireAdmin, ah(async (req, res) => {
   const { username, password, role } = req.body || {};
-  if (!username?.trim() || !password) return res.status(400).json({ error: 'Fields missing', code: 'FIELDS_MISSING' });
-  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
+  const bad = auth.usernameProblem(username) || auth.passwordProblem(password);
+  if (bad) return res.status(400).json(bad);
   if (!['admin', 'viewer'].includes(role)) return res.status(400).json({ error: 'Invalid role', code: 'INVALID_ROLE' });
   // ON CONFLICT instead of a SELECT-then-INSERT: the UNIQUE index decides, so two
   // concurrent requests for the same name can't both get past a pre-check.
@@ -504,7 +727,7 @@ app.post('/api/users', requireAdmin, ah(async (req, res) => {
     `INSERT INTO users (username, hash, role) VALUES ($1, $2, $3)
      ON CONFLICT (username) DO NOTHING
      RETURNING id, username, role`,
-    [username.trim(), bcrypt.hashSync(password, 12), role]
+    [username.trim(), await auth.hashPassword(password), role]
   );
   if (!row) return res.status(409).json({ error: 'Username already taken', code: 'USERNAME_TAKEN' });
   res.status(201).json(row);
@@ -514,7 +737,8 @@ app.put('/api/users/:id/password', requireAdmin, ah(async (req, res) => {
   const id = Number(req.params.id);
   const { password } = req.body || {};
   if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id', code: 'INVALID_ID' });
-  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters', code: 'PW_TOO_SHORT' });
+  const bad = auth.passwordProblem(password);
+  if (bad) return res.status(400).json(bad);
 
   // Admin-forced reset: the admin never has the target user's OLD plaintext
   // password, so their vault key can't be re-derived and the existing vault
@@ -525,8 +749,8 @@ app.put('/api/users/:id/password', requireAdmin, ah(async (req, res) => {
     if (!rows[0]) return false;
     await client.query('DELETE FROM vault_entries WHERE user_id = $1', [id]);
     await client.query(
-      'UPDATE users SET hash = $1, vault_salt = $2 WHERE id = $3',
-      [bcrypt.hashSync(password, 12), vaultCrypto.newSalt(), id]
+      'UPDATE users SET hash = $1, vault_salt = $2, failed_attempts = 0, locked_until = NULL WHERE id = $3',
+      [await auth.hashPassword(password), vaultCrypto.newSalt(), id]
     );
     return true;
   });
@@ -570,8 +794,14 @@ app.delete('/api/users/:id', requireAdmin, ah(async (req, res) => {
       const { rows: cnt } = await client.query("SELECT COUNT(*)::int AS c FROM users WHERE role = 'admin'");
       if (cnt[0].c <= 1) return 'lastadmin';
     }
-    // Explicit cleanup before the user row goes (vault_entries references users).
+    // Explicit cleanup before the user row goes — vault_entries and
+    // invite_codes both reference users(id), so the DELETE fails on the foreign
+    // key otherwise. The invite rows are kept but detached: they are the record
+    // of how accounts were created, and losing that on a user deletion would
+    // punch a hole in the audit trail.
     await client.query('DELETE FROM vault_entries WHERE user_id = $1', [id]);
+    await client.query('UPDATE invite_codes SET created_by = NULL WHERE created_by = $1', [id]);
+    await client.query('UPDATE invite_codes SET used_by = NULL WHERE used_by = $1', [id]);
     await client.query('DELETE FROM users WHERE id = $1', [id]);
     return 'ok';
   });
@@ -775,8 +1005,11 @@ async function startup() {
   if (connected) {
     try {
       await db.initSchema();
-      await seedAdmin();
       secret = await getSessionSecret();
+      await auth.pruneLoginAttempts();
+      if (await noUsersYet()) {
+        console.log('[dashboard] No accounts yet — the setup wizard is open at /setup');
+      }
       console.log('[dashboard] database ready (schema verified)');
     } catch (err) {
       console.error(`[dashboard] database setup failed: ${err.message}`);
@@ -807,11 +1040,19 @@ async function startup() {
     secret,
     resave: false,
     saveUninitialized: false,
+    // The default name 'connect.sid' advertises the stack to anyone reading
+    // response headers. Not a defence on its own, just free.
+    name: 'zs.sid',
     cookie: {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.COOKIE_SECURE === 'true',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      // 'strict' rather than 'lax': the dashboard is never legitimately entered
+      // by a cross-site navigation, and strict is what covers the three
+      // unauthenticated POST endpoints that cannot carry a CSRF token.
+      sameSite: 'strict',
+      secure: forceHttps || process.env.COOKIE_SECURE === 'true',
+      // 24h, down from a week. The session holds the derived vault key, so its
+      // lifetime is how long a stolen session cookie can decrypt the vault.
+      maxAge: 24 * 60 * 60 * 1000,
     },
   });
 

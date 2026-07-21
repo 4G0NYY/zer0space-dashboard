@@ -20,8 +20,33 @@ const THEME_MIGRATION = { amber: 'bernstein', green: 'gruen' };
 let currentTheme = 'cyan';
 let userRole     = 'viewer'; // set in init()
 let selfUsername = '';       // set in init()
-let csrfToken     = '';       // set in init(), required on vault POST/PUT/DELETE
+let csrfToken     = '';       // set in init(), required on every POST/PUT/DELETE
 let vaultUnlocked = false;    // set in init(); false = session predates the vault key or a password was reset
+
+// CSRF is enforced server-side on EVERY state-changing route, not just the vault
+// (see auth.js). Rather than thread the header through the ~20 fetch calls in
+// this file — and rely on every future one remembering — wrap fetch once and
+// attach it to any same-origin request that is not a safe method.
+//
+// Only same-origin: the token must never be sent to a third party, and a
+// relative URL is the only kind this app issues anyway.
+(function patchFetchWithCsrf() {
+  const nativeFetch = window.fetch.bind(window);
+  const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+  window.fetch = (input, init = {}) => {
+    const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+    const url = typeof input === 'string' ? input : input?.url || '';
+    const sameOrigin = url.startsWith('/') || url.startsWith(window.location.origin);
+
+    if (!SAFE.has(method) && sameOrigin && csrfToken) {
+      const headers = new Headers(init.headers || (typeof input === 'object' ? input.headers : undefined));
+      if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', csrfToken);
+      return nativeFetch(input, { ...init, method, headers });
+    }
+    return nativeFetch(input, init);
+  };
+})();
 
 function hexToRgba(hex, alpha) {
   const h = hex.replace('#', '');
@@ -279,7 +304,7 @@ function switchView(name) {
     el.classList.toggle('active', el.dataset.view === name);
   });
   if (window.innerWidth <= 860) document.getElementById('sidebar').classList.remove('open');
-  if (name === 'einstellungen' && userRole === 'admin') loadUsers();
+  if (name === 'einstellungen' && userRole === 'admin') { loadUsers(); loadInvites(); }
   if (name === 'vault') loadVault();
   // Decrypted vault values shouldn't sit in JS/DOM memory longer than the
   // user is actually looking at the Vault view.
@@ -617,7 +642,7 @@ document.getElementById('changePasswordForm').addEventListener('submit', async e
   const btn=document.getElementById('cpSubmitBtn'), msg=document.getElementById('cpMsg');
   msg.textContent=''; msg.className='settings-msg';
   if(newPassword!==confirmPassword){msg.textContent=t('settings.pwMismatch');msg.className='settings-msg error';return;}
-  if(newPassword.length<8){msg.textContent=t('users.pwMin8');msg.className='settings-msg error';return;}
+  if(newPassword.length<12){msg.textContent=t('users.pwMin12');msg.className='settings-msg error';return;}
   btn.disabled=true; btn.textContent='…';
   try {
     const res=await fetch('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword,newPassword})});
@@ -646,7 +671,9 @@ function buildUserRow(u) {
   row.innerHTML=`
     <span class="user-row-name">${esc(u.username)}${isSelf?`<span class="you-badge">${esc(t('users.you'))}</span>`:''}</span>
     <span class="role-badge ${u.role}">${u.role}</span>
+    ${u.locked_until?`<span class="lock-badge" title="${esc(t('users.locked'))}"><i class="ti ti-lock"></i> ${esc(t('users.locked'))}</span>`:''}
     <div class="user-row-actions">
+      ${u.locked_until?`<button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="unlock-user">${esc(t('users.unlock'))}</button>`:''}
       <button class="btn-sm btn-sm-accent" data-id="${u.id}" data-action="toggle-reset">${esc(t('users.resetPassword'))}</button>
       <button class="btn-sm" data-id="${u.id}" data-action="toggle-role">${u.role==='admin'?'→ Viewer':'→ Admin'}</button>
       <button class="btn-sm btn-sm-danger" data-id="${u.id}" data-action="delete-user"${isSelf?` disabled title="${esc(t('users.cannotDeleteSelf'))}"`:''}>${esc(t('common.delete'))}</button>
@@ -674,7 +701,7 @@ document.getElementById('userList').addEventListener('click', async e=>{
   if (action==='confirm-reset') {
     const f=document.getElementById(`reset-form-${id}`);
     const pw=f.querySelector('.reset-pw-input').value;
-    if(!pw||pw.length<8){alert(t('users.pwMin8'));return;}
+    if(!pw||pw.length<12){alert(t('users.pwMin12'));return;}
     btn.disabled=true;
     const res=await fetch(`/api/users/${id}/password`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
     btn.disabled=false;
@@ -699,6 +726,123 @@ document.getElementById('userList').addEventListener('click', async e=>{
     if(res.ok) loadUsers();
     else{const d=await res.json().catch(()=>({}));alert(I18N.tError(d));}
   }
+  if (action==='unlock-user') {
+    btn.disabled=true;
+    const res=await fetch(`/api/users/${id}/unlock`,{method:'POST'});
+    btn.disabled=false;
+    if(res.ok) loadUsers();
+    else{const d=await res.json().catch(()=>({}));alert(I18N.tError(d));}
+  }
+});
+
+// ================================================================
+// Invitations (admin only)
+// ================================================================
+//
+// After setup, an invite is the only route to a new account. The admin never
+// sets the invitee's password — that is the point: a password only its owner has
+// ever seen is one the admin cannot leak, and the vault key derived from it is
+// one the admin can never reconstruct.
+
+async function loadInvites() {
+  const invites = await fetch('/api/invites').then(r=>r.json()).catch(()=>[]);
+  const list = document.getElementById('inviteList');
+  list.innerHTML = '';
+  if (!invites.length) {
+    list.innerHTML = `<p class="settings-hint">${esc(t('invites.none'))}</p>`;
+    return;
+  }
+  invites.forEach(inv => list.appendChild(buildInviteRow(inv)));
+}
+
+function inviteLink(code) {
+  return `${window.location.origin}/register?code=${code}`;
+}
+
+function buildInviteRow(inv) {
+  const row = document.createElement('div');
+  row.className = `invite-row invite-${inv.status}`;
+  row.id = `invite-row-${inv.id}`;
+
+  const when = new Date(inv.status === 'used' ? inv.used_at : inv.expires_at)
+    .toLocaleDateString(t('locale'), { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const detail = inv.status === 'used'
+    ? esc(t('invites.usedBy', { name: inv.used_by_name || '—' }))
+    : `${esc(t('invites.expires'))} ${esc(when)}`;
+
+  // The full code is shown only while it can still be redeemed. Once used or
+  // expired it is dead weight, and printing it forever is a habit worth not
+  // forming.
+  const codeCell = inv.status === 'active'
+    ? `<code class="invite-code">${esc(inv.code)}</code>`
+    : `<code class="invite-code invite-code-spent">${esc(inv.code.slice(0, 8))}…</code>`;
+
+  row.innerHTML = `
+    ${codeCell}
+    <span class="invite-status invite-status-${inv.status}">${esc(t(`invites.status.${inv.status}`))}</span>
+    <span class="role-badge ${inv.max_role}">${esc(inv.max_role)}</span>
+    <span class="invite-detail">${detail}</span>
+    <div class="invite-actions">
+      ${inv.status === 'active' ? `
+        <button class="btn-sm btn-sm-accent" data-id="${inv.id}" data-code="${esc(inv.code)}" data-action="copy-invite">${esc(t('invites.copy'))}</button>
+        <button class="btn-sm btn-sm-danger" data-id="${inv.id}" data-action="revoke-invite">${esc(t('invites.revoke'))}</button>
+      ` : ''}
+    </div>`;
+  return row;
+}
+
+document.getElementById('inviteList').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-action]'); if (!btn) return;
+  const id = Number(btn.dataset.id), action = btn.dataset.action;
+
+  if (action === 'copy-invite') {
+    try {
+      await navigator.clipboard.writeText(inviteLink(btn.dataset.code));
+      const original = btn.textContent;
+      btn.textContent = t('invites.copied');
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    } catch {
+      // Clipboard access needs a secure context; on plain HTTP over the LAN it
+      // is simply unavailable, so fall back to showing the link to copy by hand.
+      prompt(t('invites.copy'), inviteLink(btn.dataset.code));
+    }
+  }
+
+  if (action === 'revoke-invite') {
+    if (!confirm(t('invites.revokeConfirm'))) return;
+    btn.disabled = true;
+    const res = await fetch(`/api/invite/${id}`, { method: 'DELETE' });
+    btn.disabled = false;
+    if (res.ok) loadInvites();
+    else { const d = await res.json().catch(() => ({})); alert(I18N.tError(d)); }
+  }
+});
+
+document.getElementById('createInviteForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  const btn = document.getElementById('createInviteBtn');
+  const msg = document.getElementById('inviteMsg');
+  msg.textContent = ''; msg.className = 'settings-msg';
+
+  btn.disabled = true;
+  const res = await fetch('/api/invite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresInDays: Number(body.expiresInDays), maxRole: body.maxRole }),
+  });
+  const data = await res.json().catch(() => ({}));
+  btn.disabled = false;
+
+  if (res.ok) {
+    msg.textContent = t('invites.created');
+    msg.className = 'settings-msg ok';
+    loadInvites();
+  } else {
+    msg.textContent = I18N.tError(data);
+    msg.className = 'settings-msg error';
+  }
 });
 
 document.getElementById('addUserForm').addEventListener('submit', async e=>{
@@ -707,7 +851,7 @@ document.getElementById('addUserForm').addEventListener('submit', async e=>{
   const btn=document.getElementById('addUserBtn'), msg=document.getElementById('addUserMsg');
   msg.textContent=''; msg.className='settings-msg';
   if(!body.username?.trim()){msg.textContent=t('users.usernameMissing');msg.className='settings-msg error';return;}
-  if(!body.password||body.password.length<8){msg.textContent=t('users.pwMin8');msg.className='settings-msg error';return;}
+  if(!body.password||body.password.length<12){msg.textContent=t('users.pwMin12');msg.className='settings-msg error';return;}
   btn.disabled=true;
   const res=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:body.username.trim(),password:body.password,role:body.role})});
   const data=await res.json().catch(()=>({}));
@@ -1034,7 +1178,7 @@ window.addEventListener('languagechange:zs', () => {
   const active = id => document.getElementById(id)?.classList.contains('active');
   renderGreeting();
   if (active('view-home')) { loadStatus(); loadServices(); loadBackupStatus(); }
-  if (active('view-einstellungen') && userRole === 'admin') loadUsers();
+  if (active('view-einstellungen') && userRole === 'admin') { loadUsers(); loadInvites(); }
   // Skipped while locked: loadVault() would only re-trigger the 403 path.
   if (active('view-vault') && vaultUnlocked) loadVault();
 });

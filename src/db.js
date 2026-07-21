@@ -134,7 +134,15 @@ const SCHEMA = `
     theme      TEXT DEFAULT NULL,
     -- PBKDF2 salt for this user's vault key. NULL until their first login
     -- (generated lazily in /api/login). The KEY itself is never stored.
-    vault_salt TEXT DEFAULT NULL
+    vault_salt TEXT DEFAULT NULL,
+    -- Consecutive failed logins. Reset to 0 on any success.
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    -- Set when failed_attempts crosses the threshold. The lock EXPIRES on its
+    -- own rather than needing an admin: a permanent lock on a guessable admin
+    -- username would let anyone who can reach /login disable the dashboard for
+    -- good, since /setup is sealed after the first admin exists. An admin can
+    -- still clear it early, and scripts/unlock-user.js is the break-glass path.
+    locked_until TIMESTAMPTZ DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -156,10 +164,52 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_vault_entries_user ON vault_entries(user_id);
 
+  -- Single-use invitations. A code is the ONLY way to create an account after
+  -- the first admin exists, so /api/register needs no other gate.
+  --
+  -- The code is stored in the clear, unlike a password hash. That is deliberate:
+  -- the admin UI has to show the code so it can be copied and sent to the
+  -- invitee, which a hash would make impossible. The exposure is bounded by the
+  -- code being single-use, expiring, and revocable.
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    id         SERIAL PRIMARY KEY,
+    code       TEXT NOT NULL UNIQUE,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_by    INTEGER REFERENCES users(id) DEFAULT NULL,
+    used_at    TIMESTAMPTZ DEFAULT NULL,
+    -- Highest role this invite may grant. 'viewer' unless an admin says otherwise.
+    max_role   TEXT NOT NULL DEFAULT 'viewer'
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_invite_codes_code ON invite_codes(code);
+
+  -- Login audit trail. Also the BACKING STORE for rate limiting: keeping the
+  -- counters here rather than in a process-local Map means a container restart
+  -- no longer wipes every lockout, which was a trivial way to bypass them.
+  -- Passwords are never written here, in any form.
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    id         SERIAL PRIMARY KEY,
+    username   TEXT NOT NULL DEFAULT '',
+    ip         TEXT NOT NULL DEFAULT '',
+    success    BOOLEAN NOT NULL DEFAULT FALSE,
+    kind       TEXT NOT NULL DEFAULT 'login',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- The rate-limit queries filter on (ip, created_at) and (username, created_at);
+  -- without these they degrade into a full scan as the table grows.
+  CREATE INDEX IF NOT EXISTS idx_login_attempts_ip   ON login_attempts(ip, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(username, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_login_attempts_time ON login_attempts(created_at DESC);
+
   -- Columns added after the initial release (no-ops on a fresh DB).
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS role       TEXT NOT NULL DEFAULT 'admin';
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS theme      TEXT DEFAULT NULL;
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_salt TEXT DEFAULT NULL;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS role            TEXT NOT NULL DEFAULT 'admin';
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS theme           TEXT DEFAULT NULL;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_salt      TEXT DEFAULT NULL;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until    TIMESTAMPTZ DEFAULT NULL;
 `;
 
 async function initSchema() {

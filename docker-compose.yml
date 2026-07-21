@@ -10,27 +10,34 @@ services:
       - FORCE_HTTPS=${FORCE_HTTPS:-false}
       - GLANCES_SERVICE=${GLANCES_SERVICE:-dashboard_glances}
       - GLANCES_PORT=${GLANCES_PORT:-61208}
-      # ── Admin credentials (set in Portainer → Stack → Environment variables) ────────────
-      # DASHBOARD_USER  : Username of the initial admin (not a secret)
-      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
-      # DASHBOARD_PASS  : Plaintext password — hashed on first start, then ignored.
-      #                   Set in Portainer: DASHBOARD_PASS=your-secure-password
-      - DASHBOARD_PASS=${DASHBOARD_PASS:-}
-      # DASHBOARD_HASH  : Alternative to DASHBOARD_PASS — pre-computed bcrypt hash ($2b$12$...).
-      #                   Generate: docker run --rm ghcr.io/zer0space-net/zer0space-dashboard:latest \
-      #                     node -e "console.log(require('bcryptjs').hashSync('PASSWORD',12))"
-      - DASHBOARD_HASH=${DASHBOARD_HASH:-}
-      # SESSION_SECRET  : optional — auto-generated and stored in the DB if not set.
-      - SESSION_SECRET=${SESSION_SECRET:-}
+      # ── Admin account ──────────────────────────────────────────────────────────────────
+      # There are no admin credentials here any more. On a fresh database the
+      # dashboard serves a setup wizard at /setup where the first administrator is
+      # created; the password is typed into a browser form, hashed with bcrypt
+      # immediately, and never exists as an env var, in this file, in Portainer's
+      # UI or in a shell history. /setup seals itself once that account exists.
+      #
+      # ── TRUST_PROXY ────────────────────────────────────────────────────────────────────
+      # Behind the Cloudflare Tunnel every request arrives from the tunnel
+      # container, so per-IP rate limiting reads cf-connecting-ip. Set to false
+      # ONLY if the dashboard is exposed directly, where that header would be
+      # attacker-controlled and could be used to dodge the limits.
+      - TRUST_PROXY=${TRUST_PROXY:-true}
       # ── PostgreSQL (zer0space-postgres, standalone on zs-state-01) ─────────────────────
       # Either DATABASE_URL as a whole, OR the individual values below.
-      # NEVER put the password here — set it as a Portainer env var or a Swarm secret.
+      # The password is NOT here — it comes from the db_password Swarm secret
+      # (see `secrets:` below). DB_PASS remains only as a local-development
+      # fallback and is deliberately left unset in this file.
       - DATABASE_URL=${DATABASE_URL:-}
       - DB_HOST=${DB_HOST:-192.168.0.16}
       - DB_PORT=${DB_PORT:-5432}
       - DB_NAME=${DB_NAME:-zer0space}
       - DB_USER=${DB_USER:-dashboard}
-      - DB_PASS=${DB_PASS:-}
+    secrets:
+      # Read from /run/secrets/<name> by src/db.js and src/server.js, which fall
+      # back to the matching env var only when the file is absent.
+      - db_password
+      - session_secret
     volumes:
       # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
       # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
@@ -137,4 +144,20 @@ networks:
   dashboard_net:
     driver: overlay
   cloudflared_proxy:
+    external: true
+
+# Both are `external: true`, so they are created once on a manager node and are
+# never part of this file — a secret defined inline would sit in the repo:
+#
+#   printf 'THE-DB-PASSWORD' | docker secret create db_password -
+#   openssl rand -hex 32 | tr -d '\n' | docker secret create session_secret -
+#
+# Rotating either means creating a new secret under a new name and updating the
+# reference: Docker secrets are immutable once created. Rotating session_secret
+# invalidates every active session, so everyone has to sign in again — and since
+# the vault key lives in the session, the vault re-locks until they do.
+secrets:
+  db_password:
+    external: true
+  session_secret:
     external: true

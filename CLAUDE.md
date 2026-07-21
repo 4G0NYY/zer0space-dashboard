@@ -13,7 +13,8 @@ A self-hosted homelab dashboard for the zer0space Docker Swarm cluster. It provi
   Glances service.
 - **Backup status** — reads the per-node JSON files the node backup script drops
   into the shared storage directory.
-- **User management** — multiple accounts with `admin` / `user` roles.
+- **User management** — multiple accounts with `admin` / `viewer` roles, created
+  through a first-run setup wizard and invitation codes.
 - **Password vault** — per-user encrypted credential storage (see the security
   section below; this is the part to be most careful with).
 
@@ -43,6 +44,7 @@ rather than silently assuming it is covered.
 ```
 src/
 ├── server.js         Express app: middleware, auth, all routes except the vault
+├── auth.js           Rate limiting, lockout, password policy, CSRF, timing safety
 ├── db.js             PostgreSQL pool + query helpers, schema bootstrap
 ├── vault-crypto.js   PBKDF2 key derivation + AES-256-GCM for vault entries
 ├── routes/
@@ -51,11 +53,19 @@ src/
     ├── i18n.js       German/English dictionary + applyI18n() (load FIRST)
     ├── app.js        Dashboard logic
     ├── login.js      Login form
+    ├── setup.js      First-run wizard (creates the initial admin)
+    ├── register.js   Invite redemption
+    ├── password-strength.js  Shared strength meter
+    ├── starfield.js  Animated background for the auth pages
     ├── index.html    Dashboard markup
-    ├── login.html    Login page
-    └── style.css
+    ├── login.html / setup.html / register.html
+    ├── auth.css      Shared styling for the three unauthenticated pages
+    └── style.css     Dashboard styling
 scripts/
+├── unlock-user.js            Break-glass account unlock (see docs/security.md)
 └── migrate-sqlite-to-pg.js   One-shot migration from the pre-v3 SQLite file
+docs/
+└── security.md               Auth system, invite flow, secrets, rate limits
 ```
 
 ## Internationalisation (German / English)
@@ -126,6 +136,31 @@ is still mounted: `/data/background/` (uploaded images) and `/data/backup-status
 (JSON written by the node backup script).
 
 ## Security — read before touching auth or the vault
+
+**`docs/security.md` is the full account of this. Read it before changing
+anything under `src/auth.js`, the login/setup/register routes, or the session
+configuration.** What follows is the short version.
+
+**Accounts.** There is no environment-seeded admin. On an empty `users` table the
+dashboard serves a setup wizard at `/setup`, which seals itself permanently once
+the first account exists. Every account after that is created by redeeming an
+invitation code an admin generated. `DASHBOARD_USER`, `DASHBOARD_PASS` and
+`DASHBOARD_HASH` are gone — do not reintroduce them.
+
+**Passwords** are bcrypt cost 12, minimum 12 characters, maximum 72 bytes
+(bcrypt ignores anything past 72). Always `await auth.hashPassword()` — never
+`hashSync`, which blocks the event loop for a quarter second per call.
+
+**Rate limiting and lockout** live in `src/auth.js` and are backed by the
+`login_attempts` table, not by an in-memory map: process-local counters were
+wiped by every container restart. Account lockouts **expire on their own** after
+30 minutes. Do not "harden" that into a permanent lock — the admin username is
+guessable, so a permanent lock would let anyone who can reach `/login` disable
+the dashboard for good.
+
+**CSRF** applies to every state-changing request behind `requireAuth`, not just
+the vault. `app.js` wraps `window.fetch` once to attach the header; if you add a
+fetch call there, it is already covered.
 
 **Vault encryption.** The per-user vault key is derived from the user's *plaintext*
 password at login (PBKDF2-HMAC-SHA256, 600k iterations, per-user salt in

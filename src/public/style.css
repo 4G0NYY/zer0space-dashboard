@@ -1141,6 +1141,73 @@ body:not(.is-admin) .add-card     { display: none !important; }
 
 .user-row-name { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; }
 
+/* Shown only while a lockout is actually in force — the API returns
+   locked_until as NULL once it has expired, so this never lingers. */
+.lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255,69,58,0.12);
+  color: #ff6b6b;
+}
+
+/* ---- Invitations ---------------------------------------------------------- */
+
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background var(--t), opacity var(--t);
+}
+.invite-row:hover { background: var(--surface-hover); }
+/* Spent invites stay listed as the audit trail, but recede visually. */
+.invite-row.invite-used,
+.invite-row.invite-expired { opacity: 0.55; }
+
+.invite-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+  background: rgba(255,255,255,0.05);
+  padding: 4px 8px;
+  border-radius: 6px;
+  /* A 32-character code must not push the row's actions off-screen. */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.invite-code-spent { color: var(--text-3); }
+
+.invite-status {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.invite-status-active  { background: rgba(48,209,88,0.12);  color: #4ade80; }
+.invite-status-used    { background: rgba(255,255,255,0.07); color: var(--text-2); }
+.invite-status-expired { background: rgba(255,214,10,0.12);  color: #ffd60a; }
+
+.invite-detail { font-size: 12px; color: var(--text-3); flex: 1; min-width: 0; }
+
+.invite-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
 .user-row-actions {
   display: flex;
   gap: 6px;

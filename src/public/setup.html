@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>zer0space — Setup</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/img/may-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/img/may-64.png">
+  <link rel="apple-touch-icon" href="/img/may-180.png">
+  <link rel="preload" as="image" href="/img/may-256.jpg">
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+  <canvas id="star-canvas" aria-hidden="true"></canvas>
+
+  <div class="card card--wide">
+    <div class="logo">
+      <div class="logo-mark">
+        <img src="/img/may-256.jpg" width="88" height="88"
+             data-i18n-alt="login.logoAlt" alt="May, das zer0space-Maskottchen">
+      </div>
+      <h1 data-i18n="setup.title">Willkommen bei zer0space</h1>
+      <p data-i18n="setup.subtitle">Ersten Administrator anlegen</p>
+    </div>
+
+    <form id="setupForm" novalidate>
+      <div class="form-group">
+        <label for="username" data-i18n="login.username">Benutzername</label>
+        <input id="username" name="username" type="text" autocomplete="username"
+               placeholder="admin" required autofocus>
+        <p class="field-hint" data-i18n="setup.usernameHint">3–32 Zeichen: Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="password" data-i18n="login.password">Passwort</label>
+        <input id="password" name="password" type="password" autocomplete="new-password"
+               placeholder="••••••••••••" required>
+        <div class="strength">
+          <div class="strength-track" aria-hidden="true">
+            <div class="strength-seg"></div>
+            <div class="strength-seg"></div>
+            <div class="strength-seg"></div>
+            <div class="strength-seg"></div>
+          </div>
+          <div class="strength-label" id="strengthLabel" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="password2" data-i18n="setup.confirm">Passwort bestätigen</label>
+        <input id="password2" name="password2" type="password" autocomplete="new-password"
+               placeholder="••••••••••••" required>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn" data-i18n="setup.submit">Administrator anlegen</button>
+      <div class="error-msg" id="errorMsg"></div>
+      <div class="success-msg" id="successMsg" data-i18n="setup.done">Fertig — du wirst zur Anmeldung weitergeleitet …</div>
+    </form>
+
+    <p class="field-hint" style="margin-top:18px;text-align:center" data-i18n="setup.note">
+      Diese Seite ist nur erreichbar, solange kein Konto existiert. Danach wird sie dauerhaft geschlossen.
+    </p>
+  </div>
+
+  <div class="lang-toggle" role="group" data-i18n-aria="top.language">
+    <button type="button" class="lang-btn" data-lang="de">DE</button>
+    <button type="button" class="lang-btn" data-lang="en">EN</button>
+  </div>
+
+  <script src="/i18n.js"></script>
+  <script src="/password-strength.js"></script>
+  <script src="/setup.js"></script>
+  <script src="/starfield.js" defer></script>
+</body>
+</html>

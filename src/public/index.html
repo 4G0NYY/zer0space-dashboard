@@ -207,7 +207,7 @@
                 <input id="cp-current" name="currentPassword" type="password" autocomplete="current-password" placeholder="••••••••">
               </div>
               <div class="form-group">
-                <label for="cp-new"><span data-i18n="settings.newPassword">Neues Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 8 Zeichen)</span></label>
+                <label for="cp-new"><span data-i18n="settings.newPassword">Neues Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 12 Zeichen)</span></label>
                 <input id="cp-new" name="newPassword" type="password" autocomplete="new-password" placeholder="••••••••">
               </div>
               <div class="form-group">
@@ -329,7 +329,7 @@
                   <input id="au-username" name="username" type="text" autocomplete="off" data-i18n-ph="users.usernamePlaceholder">
                 </div>
                 <div class="form-group">
-                  <label for="au-password"><span data-i18n="users.password">Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 8 Zeichen)</span></label>
+                  <label for="au-password"><span data-i18n="users.password">Passwort</span> <span class="label-hint" data-i18n="settings.minChars">(min. 12 Zeichen)</span></label>
                   <input id="au-password" name="password" type="password" placeholder="••••••••">
                 </div>
                 <div class="form-group">
@@ -343,6 +343,40 @@
                 <div class="settings-msg" id="addUserMsg"></div>
               </form>
             </div>
+          </div>
+
+          <!-- Invitations (admin only) -->
+          <div class="settings-section admin-only" id="sectionInvites">
+            <h3 class="settings-heading" data-i18n="invites.title">Einladungen</h3>
+            <p class="settings-hint" data-i18n="invites.description">
+              Neue Konten entstehen ausschliesslich über einen Einladungscode. Jeder Code gilt einmal.
+            </p>
+
+            <form class="settings-form" id="createInviteForm" novalidate>
+              <div class="form-group">
+                <label for="inv-days">
+                  <span data-i18n="invites.validity">Gültigkeit</span>
+                  <span class="label-hint" data-i18n="invites.days">Tage</span>
+                </label>
+                <select id="inv-days" name="expiresInDays">
+                  <option value="1">1</option>
+                  <option value="7" selected>7</option>
+                  <option value="14">14</option>
+                  <option value="30">30</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="inv-role" data-i18n="invites.role">Rolle</label>
+                <select id="inv-role" name="maxRole">
+                  <option value="viewer" data-i18n="invites.roleViewer">Betrachter</option>
+                  <option value="admin" data-i18n="invites.roleAdmin">Administrator</option>
+                </select>
+              </div>
+              <button type="submit" class="btn-primary" id="createInviteBtn" data-i18n="invites.create">Code erstellen</button>
+              <div class="settings-msg" id="inviteMsg"></div>
+            </form>
+
+            <div id="inviteList" class="invite-list"></div>
           </div>
 
         </div>

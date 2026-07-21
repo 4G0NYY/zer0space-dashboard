@@ -4,6 +4,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "unlock-user": "node scripts/unlock-user.js",
     "migrate:sqlite": "node scripts/migrate-sqlite-to-pg.js"
   },
   "dependencies": {

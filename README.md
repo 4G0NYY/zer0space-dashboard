@@ -86,18 +86,29 @@ for the full list with comments. The essentials:
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` *or* `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASS` | PostgreSQL connection (`DATABASE_URL` wins if set) |
-| `DASHBOARD_USER` / `DASHBOARD_PASS` / `DASHBOARD_HASH` | Initial admin account, used only on first start of an empty DB |
-| `SESSION_SECRET` | Session signing key; auto-generated and stored in the DB if unset |
+| `DATABASE_URL` *or* `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` | PostgreSQL connection (`DATABASE_URL` wins if set) |
 | `COOKIE_SECURE` / `FORCE_HTTPS` | Enable when running behind HTTPS (Cloudflare Tunnel) |
+| `TRUST_PROXY` | Read the client IP from `cf-connecting-ip`; `true` behind the tunnel, `false` if exposed directly |
 | `GLANCES_SERVICE` / `GLANCES_PORT` | Where to collect host metrics from |
 | `DOCKER_PROXY_URL` | Read-only Docker socket proxy endpoint |
 | `TZ` | Container timezone |
 
-Secrets can be provided as **Docker Swarm secrets** instead of environment
-variables — the server reads `/run/secrets/db_password`,
-`/run/secrets/dashboard_hash` and `/run/secrets/session_secret` first and only then
-falls back to the env vars. This is the recommended path for production.
+**There is no admin account in the configuration.** On a fresh database the
+dashboard serves a setup wizard at `/setup` where the first administrator is
+created in the browser; every account after that is created by redeeming an
+invitation code. See [`docs/security.md`](docs/security.md).
+
+Passwords are **Docker Swarm secrets**, not environment variables: the server
+reads `/run/secrets/db_password` and `/run/secrets/session_secret` first and
+falls back to `DB_PASS` / `SESSION_SECRET` only for local development.
+
+### First start
+
+1. Deploy the stack.
+2. Open the dashboard — it redirects to `/setup`.
+3. Create the administrator account (minimum 12 characters).
+4. `/setup` is now closed permanently. Invite further users from
+   **Settings → Invitations**.
 
 ## Deployment
 
