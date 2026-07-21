@@ -4,6 +4,15 @@ const form     = document.getElementById('loginForm');
 const btn      = document.getElementById('submitBtn');
 const errorMsg = document.getElementById('errorMsg');
 
+// Arrived here from a completed registration — confirm it, then drop the
+// parameter so a reload does not keep asserting something that already happened.
+(function showRegisteredNotice() {
+  if (new URLSearchParams(window.location.search).get('registered') !== '1') return;
+  document.getElementById('registeredMsg')?.classList.add('visible');
+  window.history.replaceState({}, '', '/login');
+  document.getElementById('username')?.focus();
+})();
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const username = document.getElementById('username').value.trim();

@@ -39,6 +39,12 @@ const LIMITS = {
   register: { max: 3,  windowMs: 60 * 60_000, blockMs: 60 * 60_000 },
 };
 
+// Invitations an admin may mint per hour. Not a brute-force defence — an admin
+// is already trusted — but a blast-radius limit: a hijacked admin session should
+// not be able to produce an unbounded supply of working registration codes
+// faster than anyone would notice.
+const INVITE_MAX_PER_HOUR = 20;
+
 // Consecutive failures before the account itself is locked. This is the
 // per-account counter on users.failed_attempts, independent of the sliding
 // windows above: it survives an attacker pacing their attempts to stay under
@@ -125,12 +131,22 @@ async function recordAttempt({ username = '', ip = '', success = false, kind = '
 // the most recent one. Attempts rejected *because* of a block are deliberately
 // not logged by the callers, so a blocked client cannot extend its own block
 // indefinitely by continuing to hammer the endpoint.
+// A column name cannot be a bind parameter, so it is interpolated — and is
+// therefore restricted to an explicit allowlist. Both call sites pass a literal
+// today; the allowlist is what keeps that true if a future one passes something
+// derived from a request.
+const COUNTABLE_COLUMNS = new Set(['ip', 'username']);
+
 async function isBlocked(column, value, limit, kind = 'login') {
+  if (!COUNTABLE_COLUMNS.has(column)) throw new Error(`isBlocked: illegal column ${column}`);
+  const max = Number.parseInt(limit.max, 10);
+  if (!Number.isInteger(max) || max < 1 || max > 1000) throw new Error('isBlocked: illegal limit');
+
   const rows = await db.all(
     `SELECT created_at FROM login_attempts
       WHERE ${column} = $1 AND success = FALSE AND kind = $2
       ORDER BY created_at DESC
-      LIMIT ${limit.max}`,
+      LIMIT ${max}`,
     [value, kind]
   );
   if (rows.length < limit.max) return null;
@@ -152,6 +168,18 @@ async function checkLoginRateLimit(ip, username) {
 
 async function checkRegisterRateLimit(ip) {
   return isBlocked('ip', ip, LIMITS.register, 'register');
+}
+
+// Counted against invite_codes itself rather than the attempt log: what matters
+// is how many live codes one admin has produced, which is a property of the
+// invites table, not of a request counter.
+async function checkInviteQuota(userId) {
+  const { c } = await db.one(
+    `SELECT COUNT(*)::int AS c FROM invite_codes
+      WHERE created_by = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+    [userId]
+  );
+  return c >= INVITE_MAX_PER_HOUR ? { made: c, max: INVITE_MAX_PER_HOUR } : null;
 }
 
 // ---- Account lockout -------------------------------------------------------
@@ -264,8 +292,9 @@ async function pruneLoginAttempts() {
 
 module.exports = {
   BCRYPT_COST, PASSWORD_MIN, PASSWORD_MAX, LIMITS, LOCKOUT_THRESHOLD, LOCKOUT_MS,
+  INVITE_MAX_PER_HOUR,
   verifyPassword, hashPassword, padTiming,
-  clientIp, recordAttempt, checkLoginRateLimit, checkRegisterRateLimit,
+  clientIp, recordAttempt, checkLoginRateLimit, checkRegisterRateLimit, checkInviteQuota,
   isLocked, registerFailedLogin, clearFailedLogins,
   passwordProblem, usernameProblem,
   issueCsrfToken, csrfProtection,

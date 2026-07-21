@@ -492,13 +492,28 @@ app.post('/api/change-password', ah(async (req, res) => {
 app.put('/api/user/theme', ah(async (req, res) => {
   const { theme } = req.body || {};
   if (!theme) return res.status(400).json({ error: 'Theme required', code: 'THEME_REQUIRED' });
+  // A named preset or a hex colour — nothing else has any meaning to the client,
+  // and an unbounded string here is a free write primitive into the users table.
+  if (typeof theme !== 'string' || !/^(#[0-9a-fA-F]{6}|[a-z]{3,16})$/.test(theme)) {
+    return res.status(400).json({ error: 'Invalid theme', code: 'THEME_INVALID' });
+  }
   await db.query('UPDATE users SET theme = $1 WHERE id = $2', [theme, req.session.userId]);
   res.json({ ok: true });
 }));
 
+// The settings table is NOT purely UI configuration — getSessionSecret() stores
+// the session signing key in it. This route is readable by any authenticated
+// user, so returning the table wholesale handed every viewer the secret used to
+// sign session cookies, which is enough to forge an admin session.
+//
+// Hence an allowlist rather than a denylist: a new internal key added later must
+// not silently become world-readable because nobody remembered to exclude it.
+const PUBLIC_SETTINGS = new Set(['theme', 'bg_mode', 'bg_file']);
+
 app.get('/api/settings', ah(async (_req, res) => {
   const out = {};
-  (await db.all('SELECT key, value FROM settings')).forEach(r => { out[r.key] = r.value; });
+  (await db.all('SELECT key, value FROM settings WHERE key = ANY($1)', [[...PUBLIC_SETTINGS]]))
+    .forEach(r => { out[r.key] = r.value; });
   res.json(out);
 }));
 
@@ -543,6 +558,15 @@ app.get('/api/status', async (_req, res) => {
 app.put('/api/settings', requireAdmin, ah(async (req, res) => {
   const { key, value } = req.body || {};
   if (!key || value === undefined) return res.status(400).json({ error: 'Key and value required', code: 'KEY_VALUE_REQUIRED' });
+  // Same allowlist as the read side: without it an admin could overwrite
+  // session_secret through the settings UI and invalidate every session — or
+  // set it to a value of their choosing.
+  if (!PUBLIC_SETTINGS.has(key)) {
+    return res.status(400).json({ error: 'Unknown setting', code: 'SETTING_UNKNOWN' });
+  }
+  if (String(value).length > 512) {
+    return res.status(400).json({ error: 'Value too long', code: 'SETTING_TOO_LONG' });
+  }
   await db.query(
     `INSERT INTO settings (key, value) VALUES ($1, $2)
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
@@ -639,11 +663,19 @@ app.delete('/api/background', requireAdmin, ah(async (_req, res) => {
 app.post('/api/invite', requireAdmin, ah(async (req, res) => {
   const { expiresInDays, maxRole } = req.body || {};
 
-  const days = Number.isFinite(Number(expiresInDays)) ? Number(expiresInDays) : 7;
+  const days = Number.isFinite(Number(expiresInDays)) ? Math.trunc(Number(expiresInDays)) : 7;
   if (days < 1 || days > 90) {
     return res.status(400).json({ error: 'Expiry must be between 1 and 90 days', code: 'INVITE_EXPIRY_INVALID' });
   }
   const role = maxRole === 'admin' ? 'admin' : 'viewer';
+
+  const over = await auth.checkInviteQuota(req.session.userId);
+  if (over) {
+    return res.status(429).json({
+      error: `Invite limit reached (${over.max} per hour)`,
+      code: 'INVITE_QUOTA',
+    });
+  }
 
   const row = await db.one(
     `INSERT INTO invite_codes (code, created_by, expires_at, max_role)
@@ -681,6 +713,21 @@ app.delete('/api/invite/:id', requireAdmin, ah(async (req, res) => {
   const { rowCount } = await db.query('DELETE FROM invite_codes WHERE id = $1 AND used_by IS NULL', [id]);
   if (!rowCount) return res.status(404).json({ error: 'Invite not found or already redeemed', code: 'INVITE_NOT_FOUND' });
   res.json({ ok: true });
+}));
+
+// Schema health (admin only). Exists because a partially-applied schema is
+// invisible from the UI: everything that was already there keeps working, and
+// the only symptom is one feature returning 500. This answers "is the table
+// actually there?" without shell access to Postgres.
+app.get('/api/health/schema', requireAdmin, ah(async (_req, res) => {
+  const { rows } = await db.query(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ANY($1)`,
+    [db.REQUIRED_TABLES]
+  );
+  const present = rows.map(r => r.table_name);
+  const missing = db.REQUIRED_TABLES.filter(t => !present.includes(t));
+  res.status(missing.length ? 503 : 200).json({ ok: missing.length === 0, present, missing });
 }));
 
 // Login audit trail (admin only) — lets an admin see whether anyone is knocking.

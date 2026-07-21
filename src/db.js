@@ -212,12 +212,73 @@ const SCHEMA = `
   ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until    TIMESTAMPTZ DEFAULT NULL;
 `;
 
+// Tables the application cannot work without. Verified after the schema runs so
+// a partial bootstrap is reported loudly instead of surfacing later as one
+// broken feature.
+const REQUIRED_TABLES = ['users', 'settings', 'services', 'vault_entries', 'invite_codes', 'login_attempts'];
+
+// Statements are executed ONE AT A TIME, not as a single multi-statement query.
+//
+// This matters more than it looks. node-postgres wraps a multi-statement string
+// in an implicit transaction, so ONE failing statement rolls back every other
+// statement in the batch. On a database that already has the older tables, the
+// result is silent and confusing: everything that existed before keeps working,
+// while a newly added table is simply missing, and the only symptom is that one
+// feature returns a 500. Running them individually means a failure costs you
+// that statement and nothing else — and says which one it was.
 async function initSchema() {
-  await query(SCHEMA);
+  // Comments are stripped BEFORE splitting on ';'. A comment containing a
+  // semicolon would otherwise cut a statement in half — the schema already has
+  // one such comment, and the next one might not land as harmlessly.
+  // Safe here because no string literal in this schema contains '--'.
+  const statements = SCHEMA
+    .split('\n')
+    .map(line => line.replace(/--.*$/, ''))
+    .join('\n')
+    .split(';')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const failures = [];
+  for (const stmt of statements) {
+    try {
+      await query(stmt);
+    } catch (err) {
+      // A connection error means the DB went away — there is no point grinding
+      // through the remaining statements, and the caller needs to see it.
+      if (isConnectionError(err)) throw err;
+      const first = stmt.split('\n')[0].slice(0, 80);
+      failures.push({ first, message: err.message });
+      console.error(`[db] schema statement failed: ${first} … — ${err.message}`);
+    }
+  }
+
   // Default global theme (idempotent).
   await query(
     "INSERT INTO settings (key, value) VALUES ('theme', 'cyan') ON CONFLICT (key) DO NOTHING"
   );
+
+  const { rows } = await query(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ANY($1)`,
+    [REQUIRED_TABLES]
+  );
+  const present = new Set(rows.map(r => r.table_name));
+  const missing = REQUIRED_TABLES.filter(t => !present.has(t));
+
+  if (missing.length) {
+    // Loud and specific: this is the difference between "the invite button is
+    // broken" and "the invite_codes table was never created".
+    console.error(
+      `[db] SCHEMA INCOMPLETE — missing table(s): ${missing.join(', ')}. ` +
+      'Features backed by them will fail. Check the statement errors above and ' +
+      'that the database user may CREATE TABLE.'
+    );
+  } else if (failures.length) {
+    console.warn(`[db] schema applied with ${failures.length} non-fatal statement error(s) — all required tables present`);
+  }
+
+  return { missing, failures };
 }
 
 // Try to reach the DB, retrying with a short backoff. Returns true on success.
@@ -266,5 +327,5 @@ module.exports = {
   pool, query, one, all, tx,
   initSchema, waitForDb, retryInBackground,
   isReady, isConnectionError, describeTarget,
-  readSecret,
+  readSecret, REQUIRED_TABLES,
 };

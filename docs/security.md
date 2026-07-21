@@ -7,6 +7,9 @@ The design target is that the dashboard can be the **only** access layer — tha
 putting Cloudflare Access in front of it is defence in depth rather than the
 thing holding the door shut.
 
+A review against that target is recorded in [Review log](#review-log) at the
+bottom, including what was found and fixed.
+
 ---
 
 ## Account lifecycle
@@ -94,6 +97,11 @@ simply waited for a deploy — got a clean slate.
 | Per IP | 10 failed logins | 15 min | 30 min |
 | Per username | 5 failed logins | 10 min | 15 min |
 | Registration, per IP | 3 attempts | 60 min | 60 min |
+| Invites per admin | 20 created | 60 min | until the hour rolls |
+
+The invite quota is not a brute-force defence — an admin is already trusted —
+but a blast radius limit: a hijacked admin session should not be able to mint an
+unbounded supply of working registration codes faster than anyone would notice.
 
 The per-username limit is tighter because a distributed guessing attack against
 one account is exactly what the per-IP limit cannot see.
@@ -279,3 +287,91 @@ refactor.
 - `GATED_PAGES` in `server.js` blocks direct access to `index.html`,
   `setup.html`, `register.html` and `login.html`. Without it `express.static`
   serves those files by name and walks straight around the route guards.
+- `PUBLIC_SETTINGS` in `server.js` is an **allowlist**, on both the read and the
+  write side of `/api/settings`. The settings table also holds `session_secret`.
+
+---
+
+## Review log
+
+Full pass over the checklist below, 21 July 2026. Verified by 59 automated
+checks against an in-memory stand-in for Postgres, plus a separate timing
+measurement, plus a click-through of the invite and registration flows.
+
+### Findings and fixes
+
+**1. `/api/settings` leaked the session signing key — critical, fixed.**
+
+`GET /api/settings` returned every row of the `settings` table, and the route
+sits behind `requireAuth` only, not `requireAdmin`. `getSessionSecret()` stores
+the session signing key in that same table. Any authenticated user — including a
+`viewer` — could therefore read the secret used to sign session cookies, forge a
+cookie for any account including an admin, and keep that access across password
+changes.
+
+Fixed with an allowlist (`theme`, `bg_mode`, `bg_file`) applied to both reading
+and writing, so a future internal key cannot become world-readable by omission.
+The write side previously accepted any key, which also let an admin overwrite
+`session_secret` through the settings UI. Regression tests cover both.
+
+This predates the auth rework; it was not introduced by it.
+
+**2. Schema bootstrap was all-or-nothing — fixed.**
+
+`initSchema()` ran the whole schema as one multi-statement query. node-postgres
+wraps those in an implicit transaction, so a single failing statement rolled back
+every other statement in the batch. On a database that already had the older
+tables the failure was silent: everything that existed kept working, and the only
+symptom was one feature returning 500 — which is exactly how "creating an invite
+does nothing" presents.
+
+Statements now run individually, a failure names the statement, and the required
+tables are verified afterwards with a loud log line if any is missing.
+`GET /api/health/schema` (admin) reports the same thing over HTTP, so this is
+answerable without shell access to Postgres.
+
+**3. `/api/user/theme` accepted unbounded input — fixed.** Any string was written
+straight into `users.theme`. Now restricted to a preset name or a hex colour.
+
+**4. `auth.js` interpolated a column name into SQL — hardened.** The value came
+from an internal constant at both call sites, never from a request, so it was not
+exploitable; it is now checked against an allowlist so it stays that way.
+
+**5. Invite creation had no rate limit — fixed.** See the quota row above.
+
+### Checklist
+
+| Item | State |
+|---|---|
+| Login rate limiting, per IP and per username | Both active, verified |
+| Registration rate limiting, per IP | Active; invalid codes count |
+| Invite API rate limiting | **Added in this pass** (20/hour/admin) |
+| Account lockout after 10 failures | Active, expires after 30 min, admin can clear |
+| CSRF on all POST/PUT/DELETE | Active on everything behind `requireAuth` |
+| Password minimum 12 characters | Enforced server-side, meter in the UI |
+| Session `httpOnly` / `sameSite=strict` / `secure` / 24 h | All verified on the wire |
+| Constant-time login response | Failure paths within 8 ms of each other, both ≥ 400 ms |
+| No stack traces or internal errors to the client | Error handler returns a generic body |
+| SQL parameterised throughout | No concatenation; one interpolation, now allowlisted |
+| Helmet CSP | Unchanged and still strict; `script-src` has no `'unsafe-inline'` |
+| Input validation on writing routes | **Two gaps found and fixed** (settings, theme) |
+| Invite codes cryptographically random | `crypto.randomBytes(16)`, 32 hex chars, single-use |
+| `/setup` sealed once an admin exists | Verified, including the direct `.html` path |
+
+### Repository audit
+
+`zer0space-net/zer0space-dashboard` is public. The whole history (7 commits) was
+searched for credentials.
+
+**No secrets found.** No `.env`, `.key`, `.pem` or `.secret` file has ever been
+committed; no bcrypt hashes, JWTs, GitHub tokens or 64-character hex strings
+appear in any diff. The only password-shaped string is `devpass`, in a README
+example for a throwaway local Postgres container.
+
+**Private IPs are present** and are the one thing worth a decision:
+`192.168.0.15`, `192.168.0.16`, `192.168.0.17`, in both the current files and the
+history. These are RFC1918 addresses — not routable from the internet, so they
+cannot be connected to — but they do disclose internal topology, and pair with
+this repository's documentation of what runs on each host. No action was taken:
+removing them means rewriting history on a public repository, which is a call for
+the repository owner, not an automated cleanup.

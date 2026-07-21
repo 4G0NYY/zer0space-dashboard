@@ -1157,6 +1157,10 @@ body:not(.is-admin) .add-card     { display: none !important; }
 
 /* ---- Invitations ---------------------------------------------------------- */
 
+/* The section description sits directly above the form; without this the first
+   field label crowds it and the two read as one run-on line. */
+#sectionInvites .settings-hint + .settings-form { margin-top: 18px; }
+
 .invite-list {
   display: flex;
   flex-direction: column;

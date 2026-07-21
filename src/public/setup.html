@@ -4,9 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>zer0space — Setup</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/img/may-32.png">
-  <link rel="icon" type="image/png" sizes="64x64" href="/img/may-64.png">
-  <link rel="apple-touch-icon" href="/img/may-180.png">
+  <!-- Tab icon: the zer0space logo mark. The source is drawn on an opaque white
+       background, so src/public/img/logo-*.png are keyed to transparency and
+       cropped to the mark — a white tile would otherwise sit in the tab strip.
+       Deliberately no <link> to an SVG alongside these: Firefox prefers an SVG
+       icon over a PNG regardless of declaration order, which would show two
+       different icons depending on the browser. -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/img/logo-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/img/logo-64.png">
+  <link rel="apple-touch-icon" href="/img/logo-180.png">
   <link rel="preload" as="image" href="/img/may-256.jpg">
   <link rel="stylesheet" href="/auth.css">
 </head>

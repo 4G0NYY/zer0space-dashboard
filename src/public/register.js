@@ -71,7 +71,9 @@ form.addEventListener('submit', async (e) => {
 
     if (res.ok) {
       okMsg.classList.add('visible');
-      setTimeout(() => { window.location.href = '/login'; }, 1400);
+      // ?registered=1 rather than a stored flag: the login page is a fresh
+      // document, and this survives the navigation without touching storage.
+      setTimeout(() => { window.location.href = '/login?registered=1'; }, 1400);
       return;
     }
 
