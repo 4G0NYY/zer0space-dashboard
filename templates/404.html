@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}404 — Lost in space{% endblock %}
+{% block body_class %}page-status{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/errors.css?v={{ asset_version }}">{% endblock %}
+
+{% block sky %}
+  <div class="sky-photo sky-photo-wide" style="background-image:url('/static/img/may-window.jpg')" aria-hidden="true"></div>
+{% endblock %}
+
+{% block body %}
+<main class="status-page" id="main">
+  <div class="status-inner">
+    <header class="status-brand">{{ ui.wordmark("/") }}</header>
+
+    <p class="status-code" aria-hidden="true">404</p>
+    <h1 class="status-title" data-i18n="err404.title">Lost in space?</h1>
+    <p class="status-sub muted" data-i18n="err404.sub">
+      Die Seite, die du suchst, gibt es nicht.
+    </p>
+
+    <div class="status-actions">
+      <a class="btn btn-primary" href="/dashboard" data-i18n="err404.toDashboard">Zum Dashboard</a>
+      <a class="btn btn-ghost" href="/" data-i18n="err404.toHome">Zur Startseite</a>
+    </div>
+
+    {# The "Thinking..." chibi from the sticker set — the one expression that
+       actually matches a page nobody meant to land on. #}
+    <img class="status-chibi" src="/static/img/chibi-06.jpg" alt="" width="260" height="348">
+  </div>
+</main>
+{% endblock %}
+
+{% block chibi %}{% endblock %}

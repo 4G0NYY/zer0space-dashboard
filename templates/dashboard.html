@@ -1,0 +1,487 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Dashboard — Zer0space{% endblock %}
+{% block body_class %}page-dashboard{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/dashboard.css?v={{ asset_version }}">{% endblock %}
+
+{#
+  Single-page app, no framework and no build step. app.js owns every view below;
+  the markup here is the shell plus the empty containers it renders into.
+
+  Anything built in JavaScript carries no data-i18n attributes, so applyI18n()
+  cannot reach it — those views are re-rendered by the `languagechange:zs`
+  listener at the bottom of app.js. Extend that listener when adding a view.
+#}
+
+{% block body %}
+<div class="app" id="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      {{ ui.wordmark("/dashboard") }}
+      <button type="button" class="btn-icon sidebar-close" id="sidebar-close"
+              data-i18n-aria="nav.closeMenu" aria-label="Menü schließen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Dashboard">
+      <button type="button" class="nav-item is-active" data-view="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 10.4 12 3.7l8.4 6.7V20a1 1 0 0 1-1 1h-4.6v-6H9.2v6H4.6a1 1 0 0 1-1-1Z"/></svg>
+        <span data-i18n="view.home">Übersicht</span>
+      </button>
+      <button type="button" class="nav-item" data-view="ai">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="7" width="15" height="12" rx="3"/><path d="M12 7V3.8M9 12.5h.01M15 12.5h.01M9.5 16h5"/><path d="M2.4 12.5h2M19.6 12.5h2"/></svg>
+        <span data-i18n="view.ai">AI</span>
+      </button>
+      <button type="button" class="nav-item" data-view="cloud">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18.5a4.2 4.2 0 0 1-.4-8.38A5.6 5.6 0 0 1 17.4 9.9 3.8 3.8 0 0 1 17 18.5Z"/></svg>
+        <span data-i18n="view.cloud">Cloud</span>
+      </button>
+      <button type="button" class="nav-item" data-view="vault">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10.5" rx="2.4"/><path d="M8 10V7.6a4 4 0 0 1 8 0V10M12 14.4v2.3"/></svg>
+        <span data-i18n="view.vault">Tresor</span>
+      </button>
+      <button type="button" class="nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.2 14.4a1.6 1.6 0 0 0 .32 1.76l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.46v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.98h-.17a1.9 1.9 0 0 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46v-.17a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.05-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.17a1.9 1.9 0 1 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.97Z"/></svg>
+        <span data-i18n="view.settings">Einstellungen</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="who">
+        <span class="who-avatar" aria-hidden="true"><img src="/static/img/may-avatar.jpg" alt="" width="420" height="420"></span>
+        <span class="who-text">
+          <strong id="who-name">{{ username or "—" }}</strong>
+          <span class="badge badge-accent" id="who-role">{{ role or "viewer" }}</span>
+        </span>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-block" id="logout">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 16.5 19 12l-4.5-4.5M19 12H8.5M11 4.5H6.4A1.9 1.9 0 0 0 4.5 6.4v11.2A1.9 1.9 0 0 0 6.4 19.5H11"/></svg>
+        <span data-i18n="nav.signOut">Abmelden</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-scrim" id="sidebar-scrim" hidden></div>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button type="button" class="btn-icon sidebar-open" id="sidebar-open"
+              data-i18n-aria="nav.openMenu" aria-label="Menü öffnen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="topbar-title">
+        <h1 id="view-title" data-i18n="view.home">Übersicht</h1>
+        <p class="faint" id="greeting"></p>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="refresh">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a8 8 0 1 0-2.2 5.6"/><path d="M20 5.5v6h-6"/></svg>
+          <span data-i18n="common.refresh">Aktualisieren</span>
+        </button>
+        {{ ui.lang_toggle() }}
+      </div>
+    </header>
+
+    <main class="content" id="main">
+      <div class="alert alert-warn banner" id="banner" role="status" hidden></div>
+
+      <!-- ============================= HOME ============================= -->
+      <section class="view is-active" id="view-home">
+        <div class="tiles" id="tiles"></div>
+
+        <section class="block">
+          <header class="block-head">
+            <h2 data-i18n="home.swarmNodes">Swarm-Nodes</h2>
+            <span class="faint" id="nodes-caption"></span>
+          </header>
+          <div class="host-grid" id="node-grid"></div>
+        </section>
+
+        <section class="block" id="extra-block" hidden>
+          <header class="block-head">
+            <h2 data-i18n="home.standalone">Standalone-Hosts</h2>
+            <span class="faint" data-i18n="home.standaloneHint">Bewusst außerhalb des Clusters</span>
+          </header>
+          <div class="host-grid" id="extra-grid"></div>
+        </section>
+
+        <section class="block">
+          <header class="block-head">
+            <h2 data-i18n="home.services">Dienste</h2>
+            <span class="faint" id="services-caption"></span>
+          </header>
+          <div class="service-grid" id="service-grid"></div>
+        </section>
+      </section>
+
+      <!-- ============================== AI ============================== -->
+      <section class="view" id="view-ai">
+        <div class="service-grid" id="ai-grid"></div>
+      </section>
+
+      <!-- ============================ CLOUD ============================= -->
+      <section class="view" id="view-cloud">
+        <div class="service-grid" id="cloud-grid"></div>
+      </section>
+
+      <!-- ============================ VAULT ============================= -->
+      <section class="view" id="view-vault">
+        <div class="panel glass">
+          <header class="panel-head">
+            <div>
+              <h2 data-i18n="vault.title">Passwort-Tresor</h2>
+              <p class="faint" data-i18n="vault.sub">
+                AES-256-GCM. Der Schlüssel wird beim Login aus deinem Passwort abgeleitet
+                und liegt nur im Server-Speicher — nie in der Datenbank.
+              </p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" id="vault-new">
+              <span data-i18n="vault.new">Neuer Eintrag</span>
+            </button>
+          </header>
+
+          <div class="panel-body">
+            <div class="field">
+              <input class="input" type="search" id="vault-search"
+                     data-i18n-ph="vault.search" placeholder="Einträge durchsuchen …">
+            </div>
+            <div class="vault-list" id="vault-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================== SETTINGS =========================== -->
+      <section class="view" id="view-settings">
+        <div class="settings-grid">
+
+          <div class="panel glass">
+            <header class="panel-head"><h2 data-i18n="settings.appearance">Darstellung</h2></header>
+            <div class="panel-body stack gap-18">
+              <div class="field">
+                <label data-i18n="settings.accent">Akzentfarbe</label>
+                <div class="swatches" id="swatches"></div>
+              </div>
+              <div class="field">
+                <label for="accent-custom" data-i18n="settings.custom">Eigene Farbe</label>
+                <div class="row gap-10">
+                  <input type="color" id="accent-custom" class="input" value="#2f7dfb" style="width:56px;padding:4px;height:40px">
+                  <span class="faint mono" id="accent-value">#2f7dfb</span>
+                </div>
+              </div>
+              <div class="field">
+                <label data-i18n="settings.language">Sprache</label>
+                {{ ui.lang_toggle() }}
+              </div>
+              <div class="field">
+                <label class="check">
+                  <input type="checkbox" id="chibi-enabled" checked>
+                  <span data-i18n="settings.chibi">May unten rechts anzeigen</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass">
+            <header class="panel-head"><h2 data-i18n="settings.password">Passwort ändern</h2></header>
+            <div class="panel-body">
+              <form id="password-form" class="stack gap-14" novalidate>
+                <div class="alert alert-error" id="password-error" role="alert" hidden></div>
+                <div class="alert alert-ok" id="password-ok" role="status" hidden></div>
+                <div class="field">
+                  <label for="current-password" data-i18n="settings.currentPw">Aktuelles Passwort</label>
+                  <input class="input" type="password" id="current-password" autocomplete="current-password" required>
+                </div>
+                <div class="field">
+                  <label for="new-password" data-i18n="settings.newPw">Neues Passwort</label>
+                  <input class="input" type="password" id="new-password" autocomplete="new-password" minlength="12" required>
+                  <div class="pw-meter" id="pw-meter" data-score="0">
+                    <div class="pw-bars"><span></span><span></span><span></span><span></span></div>
+                    <div class="pw-label" id="pw-label"></div>
+                  </div>
+                </div>
+                <p class="faint" data-i18n="settings.pwNote">
+                  Deine Tresor-Einträge werden dabei automatisch mit dem neuen Schlüssel
+                  neu verschlüsselt.
+                </p>
+                <button class="btn btn-primary" type="submit" data-i18n="settings.savePw">Passwort ändern</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Admin-only panels. Hidden by app.js for viewers; the API enforces
+               the same boundary server-side, so this is convenience, not a gate. -->
+          <div class="panel glass admin-only" hidden>
+            <header class="panel-head">
+              <div>
+                <h2 data-i18n="settings.invites">Einladungscodes</h2>
+                <p class="faint" data-i18n="settings.invitesSub">
+                  Nach der Ersteinrichtung ist ein Code der einzige Weg zu einem neuen Konto.
+                </p>
+              </div>
+            </header>
+            <div class="panel-body stack gap-18">
+              <form id="invite-form" class="invite-form" novalidate>
+                <div class="field">
+                  <label for="invite-days" data-i18n="settings.inviteExpiry">Gültig (Tage)</label>
+                  <input class="input" type="number" id="invite-days" min="1" max="90" value="7">
+                </div>
+                <div class="field">
+                  <label for="invite-role" data-i18n="settings.inviteRole">Maximale Rolle</label>
+                  <select class="input" id="invite-role">
+                    <option value="viewer" data-i18n="role.viewer">Viewer</option>
+                    <option value="admin" data-i18n="role.admin">Admin</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" type="submit" data-i18n="settings.inviteCreate">Code erzeugen</button>
+              </form>
+
+              <!-- Freshly minted code. This is the ONE moment the code is worth
+                   showing prominently: it has to be copied and sent before it is
+                   any use to anybody. -->
+              <div class="invite-fresh glass" id="invite-fresh" hidden>
+                <div class="stack gap-6">
+                  <span class="eyebrow" data-i18n="settings.inviteFresh">Neuer Code</span>
+                  <code class="invite-code" id="invite-code"></code>
+                  <span class="faint" id="invite-meta"></span>
+                </div>
+                <div class="row gap-10 row-wrap">
+                  <button type="button" class="btn btn-primary btn-sm" id="invite-copy" data-i18n="common.copy">Kopieren</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="invite-copy-link" data-i18n="settings.copyLink">Link kopieren</button>
+                </div>
+              </div>
+
+              <div class="table-wrap scroll-x">
+                <table class="table" id="invite-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="settings.code">Code</th>
+                      <th data-i18n="common.status">Status</th>
+                      <th data-i18n="settings.inviteRole">Rolle</th>
+                      <th data-i18n="settings.expires">Läuft ab</th>
+                      <th data-i18n="settings.usedBy">Eingelöst von</th>
+                      <th class="col-actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="invite-rows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass admin-only" hidden>
+            <header class="panel-head"><h2 data-i18n="settings.users">Benutzer</h2></header>
+            <div class="panel-body">
+              <div class="table-wrap scroll-x">
+                <table class="table" id="user-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="common.username">Benutzername</th>
+                      <th data-i18n="settings.role">Rolle</th>
+                      <th data-i18n="common.status">Status</th>
+                      <th class="col-actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="user-rows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass admin-only" hidden>
+            <header class="panel-head">
+              <h2 data-i18n="settings.servicesAdmin">Dienste verwalten</h2>
+              <button type="button" class="btn btn-primary btn-sm" id="service-new" data-i18n="settings.serviceNew">Dienst hinzufügen</button>
+            </header>
+            <div class="panel-body">
+              <div class="table-wrap scroll-x">
+                <table class="table" id="service-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="common.name">Name</th>
+                      <th data-i18n="settings.category">Bereich</th>
+                      <th>URL</th>
+                      <th class="col-actions"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="service-rows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel glass admin-only" hidden>
+            <header class="panel-head">
+              <div>
+                <h2 data-i18n="settings.audit">Login-Versuche</h2>
+                <p class="faint" data-i18n="settings.auditSub">Zeigt, ob gerade jemand anklopft.</p>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="audit-reload" data-i18n="common.refresh">Aktualisieren</button>
+            </header>
+            <div class="panel-body">
+              <div class="table-wrap scroll-x">
+                <table class="table table-compact">
+                  <thead>
+                    <tr>
+                      <th data-i18n="settings.when">Zeitpunkt</th>
+                      <th data-i18n="common.username">Benutzername</th>
+                      <th>IP</th>
+                      <th data-i18n="common.type">Typ</th>
+                      <th data-i18n="common.result">Ergebnis</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-rows"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- Loading overlay. Uses the indeterminate bar: there is no honest percentage
+     to report, and a fake one that jumps to 100 is worse than none. -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="stack gap-14" style="align-items:center">
+    <div class="loading-mark">{{ ui.brand_mark() }}{{ ui.wordmark_static("wordmark-lg") }}</div>
+    <p class="loading-text" data-i18n="loading.text">Lade dein Universum …</p>
+    <div class="progress progress-indeterminate"><div class="progress-bar"></div></div>
+  </div>
+</div>
+
+<!-- Vault entry editor -->
+<div class="modal" id="modal-vault" hidden>
+  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="vault-modal-title">
+    <div class="modal-head">
+      <h2 id="vault-modal-title" data-i18n="vault.new">Neuer Eintrag</h2>
+      <button type="button" class="modal-close" data-modal-close data-i18n-aria="common.close" aria-label="Schließen">&times;</button>
+    </div>
+    <form id="vault-form" class="stack gap-14" novalidate>
+      <div class="alert alert-error" id="vault-error" role="alert" hidden></div>
+      <input type="hidden" id="vault-id">
+      <div class="field">
+        <label for="vault-title" data-i18n="vault.fieldTitle">Titel</label>
+        <input class="input" type="text" id="vault-title" maxlength="200" required>
+      </div>
+      <div class="field">
+        <label for="vault-username" data-i18n="common.username">Benutzername</label>
+        <input class="input" type="text" id="vault-username" maxlength="200" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="vault-password" data-i18n="common.password">Passwort</label>
+        <div class="input-wrap">
+          <input class="input input-mono" type="password" id="vault-password" maxlength="2000" autocomplete="new-password">
+          <button type="button" class="input-affix" data-toggle-password="vault-password"
+                  data-i18n-aria="common.showPassword" aria-label="Passwort anzeigen">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="2.9"/></svg>
+          </button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="vault-generate" data-i18n="vault.generate">Passwort erzeugen</button>
+      </div>
+      <div class="field">
+        <label for="vault-url">URL</label>
+        <input class="input" type="url" id="vault-url" maxlength="500" placeholder="https://">
+      </div>
+      <div class="field">
+        <label for="vault-notes" data-i18n="vault.notes">Notizen</label>
+        <textarea class="input" id="vault-notes" maxlength="5000"></textarea>
+      </div>
+      <div class="row gap-10 row-wrap">
+        <button class="btn btn-primary" type="submit" data-i18n="common.save">Speichern</button>
+        <button class="btn btn-ghost" type="button" data-modal-close data-i18n="common.cancel">Abbrechen</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Admin-forced password reset.
+     Its own dialog rather than a prompt(), because the consequence needs saying
+     out loud: the admin has no way to re-derive the target user's vault key, so
+     the reset deletes their vault rather than leaving rows that can never be
+     decrypted. -->
+<div class="modal" id="modal-reset" hidden>
+  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title">
+    <div class="modal-head">
+      <h2 id="reset-modal-title" data-i18n="settings.resetPw">Passwort zurücksetzen</h2>
+      <button type="button" class="modal-close" data-modal-close data-i18n-aria="common.close" aria-label="Schließen">&times;</button>
+    </div>
+    <form id="reset-form" class="stack gap-14" novalidate>
+      <div class="alert alert-error" id="reset-error" role="alert" hidden></div>
+      <div class="alert alert-warn" data-i18n="settings.resetWarning">
+        Der Tresor dieses Kontos wird dabei gelöscht. Ein Admin kennt das alte
+        Passwort nicht und kann den Schlüssel nicht neu ableiten — die Einträge
+        wären sonst dauerhaft unlesbar.
+      </div>
+      <input type="hidden" id="reset-id">
+      <p class="muted" id="reset-target"></p>
+      <div class="field">
+        <label for="reset-password" data-i18n="settings.newPw">Neues Passwort</label>
+        <div class="input-wrap">
+          <input class="input input-mono" type="password" id="reset-password" minlength="12" required autocomplete="new-password">
+          <button type="button" class="input-affix" data-toggle-password="reset-password"
+                  data-i18n-aria="common.showPassword" aria-label="Passwort anzeigen">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="2.9"/></svg>
+          </button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="reset-generate" data-i18n="vault.generate">Passwort erzeugen</button>
+      </div>
+      <div class="row gap-10 row-wrap">
+        <button class="btn btn-danger" type="submit" data-i18n="settings.resetConfirm">Zurücksetzen und Tresor löschen</button>
+        <button class="btn btn-ghost" type="button" data-modal-close data-i18n="common.cancel">Abbrechen</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Service editor (admin) -->
+<div class="modal" id="modal-service" hidden>
+  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="service-modal-title">
+    <div class="modal-head">
+      <h2 id="service-modal-title" data-i18n="settings.serviceNew">Dienst hinzufügen</h2>
+      <button type="button" class="modal-close" data-modal-close data-i18n-aria="common.close" aria-label="Schließen">&times;</button>
+    </div>
+    <form id="service-form" class="stack gap-14" novalidate>
+      <div class="alert alert-error" id="service-error" role="alert" hidden></div>
+      <input type="hidden" id="service-id">
+      <div class="field">
+        <label for="service-name" data-i18n="common.name">Name</label>
+        <input class="input" type="text" id="service-name" maxlength="100" required>
+      </div>
+      <div class="field">
+        <label for="service-desc" data-i18n="common.description">Beschreibung</label>
+        <input class="input" type="text" id="service-desc" maxlength="300">
+      </div>
+      <div class="field">
+        <label for="service-url">URL</label>
+        <input class="input" type="url" id="service-url" maxlength="500" placeholder="https://">
+      </div>
+      <div class="field">
+        <label for="service-category" data-i18n="settings.category">Bereich</label>
+        <select class="input" id="service-category">
+          <option value="general" data-i18n="cat.general">Allgemein</option>
+          <option value="ai" data-i18n="cat.ai">AI</option>
+          <option value="cloud" data-i18n="cat.cloud">Cloud</option>
+          <option value="tools" data-i18n="cat.tools">Werkzeuge</option>
+        </select>
+      </div>
+      <div class="row gap-10 row-wrap">
+        <button class="btn btn-primary" type="submit" data-i18n="common.save">Speichern</button>
+        <button class="btn btn-ghost" type="button" data-modal-close data-i18n="common.cancel">Abbrechen</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/password-strength.js?v={{ asset_version }}"></script>
+<script src="/static/js/app.js?v={{ asset_version }}" defer></script>
+{% endblock %}

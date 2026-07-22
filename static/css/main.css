@@ -1,0 +1,716 @@
+/* ==========================================================================
+   zer0space — design system
+   --------------------------------------------------------------------------
+   The look is taken from the mascot/brand sheet in zer0space-docs
+   ("may (mascot)/all2.png", "für-claude.png"): near-black navy, one saturated
+   blue accent, frosted glass panels floating over a starfield, and May herself
+   as the only warm colour on the page.
+
+   No framework and no build step. Everything is custom properties + plain CSS,
+   which is what lets the theme picker recolour the whole UI by writing a single
+   variable, and what keeps the served files identical to the files in git.
+
+   Load order matters: main.css first, then exactly one page stylesheet.
+   ========================================================================== */
+
+/* --- Tokens -------------------------------------------------------------- */
+
+:root {
+  /* Accent. The theme picker overwrites --accent (and only --accent) at
+     runtime; everything tinted below is derived from it with color-mix, so a
+     single assignment recolours buttons, focus rings, glows and charts. */
+  --accent: #2f7dfb;
+  --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 42%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 30%, transparent);
+  --accent-ink: #ffffff;
+
+  /* Space. Not pure black — the brand art sits in very dark blue, and true
+     black next to it reads as a hole in the page. */
+  --bg: #04070e;
+  --bg-2: #070c17;
+  --bg-3: #0b1220;
+
+  /* Glass. Two levels: panels sit on --glass, things inside them on --glass-2. */
+  --glass: rgba(13, 20, 36, 0.62);
+  --glass-2: rgba(20, 29, 48, 0.58);
+  --glass-solid: #0d1424;
+  --border: rgba(120, 160, 225, 0.14);
+  --border-strong: rgba(120, 160, 225, 0.26);
+
+  --text: #e9eefa;
+  --text-dim: #94a5c2;
+  --text-faint: #5d6f8f;
+
+  --ok: #37d399;
+  --warn: #f0b23f;
+  --crit: #f2586b;
+  --unknown: #6b7d9c;
+
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.85);
+  --shadow-glow: 0 0 0 1px var(--accent-line), 0 12px 40px -12px var(--accent-glow);
+
+  --blur: saturate(1.35) blur(22px);
+
+  --font: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shell: 1200px;
+}
+
+/* Named theme presets. Applied as data-theme on <html> by static/js/theme.js;
+   a custom hex from the picker is written straight onto --accent instead. */
+:root[data-theme="aurora"]  { --accent: #2f7dfb; }
+:root[data-theme="cyan"]    { --accent: #22c3d6; }
+:root[data-theme="violet"]  { --accent: #8b5cf6; }
+:root[data-theme="ember"]   { --accent: #f97316; }
+:root[data-theme="mint"]    { --accent: #22c58b; }
+:root[data-theme="rose"]    { --accent: #f43f7e; }
+
+/* --- Reset --------------------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+html {
+  /* The design is dark-first and has no light variant — telling the browser so
+     makes form controls, scrollbars and the address bar match instead of
+     flashing white. */
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  /* Wide content (tables, node grids) scrolls in its own container; the page
+     body itself must never scroll sideways. */
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg, video { max-width: 100%; display: block; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.02em; line-height: 1.15; }
+p { margin: 0; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection { background: var(--accent-soft); color: var(--text); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 160, 225, 0.18);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(120, 160, 225, 0.34); background-clip: content-box; }
+
+/* --- Space background ---------------------------------------------------- */
+/* Three stacked layers, all fixed and pointer-transparent:
+     .sky        gradient + nebula glows (pure CSS, always present)
+     #starfield  canvas, drawn by static/js/starfield.js
+     .sky-photo  optional mascot artwork, per page
+   Kept out of the document flow entirely so no layout depends on them. */
+
+.sky, .sky-photo, #starfield {
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+}
+
+.sky {
+  background:
+    radial-gradient(1100px 600px at 78% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
+    radial-gradient(900px 700px at 8% 104%, rgba(88, 60, 190, 0.16), transparent 60%),
+    radial-gradient(600px 400px at 50% 40%, rgba(20, 60, 140, 0.10), transparent 70%),
+    linear-gradient(175deg, var(--bg-2) 0%, var(--bg) 55%, #02050a 100%);
+}
+
+#starfield { z-index: -2; opacity: 0.85; }
+
+.sky-photo {
+  z-index: -1;
+  background-position: center;
+  background-size: cover;
+  /* The art is a full illustration, not a texture: without the mask it fights
+     every panel on top of it for attention. Fading it into the right edge keeps
+     May present without turning the page into a wallpaper. */
+  opacity: 0.5;
+  -webkit-mask-image: linear-gradient(to left, #000 0%, rgba(0, 0, 0, 0.5) 42%, transparent 78%);
+  mask-image: linear-gradient(to left, #000 0%, rgba(0, 0, 0, 0.5) 42%, transparent 78%);
+}
+
+.sky-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--bg) 2%, transparent 45%);
+}
+
+/* --- Glass --------------------------------------------------------------- */
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  position: relative;
+}
+
+/* A one-pixel highlight along the top edge. This is what makes the panels read
+   as glass rather than as flat translucent rectangles. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(190, 215, 255, 0.32), transparent);
+  pointer-events: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* Firefox with backdrop-filter disabled, and older WebKit. Without this the
+     panels are simply see-through and the text sits on the artwork. */
+  .glass { background: rgba(9, 14, 26, 0.94); }
+}
+
+/* --- Wordmark ------------------------------------------------------------ */
+/* ZER0SPACE, with the slashed octagonal zero from the brand mark standing in
+   for the O. Rendered as inline SVG (templates/_logo.html) so it inherits
+   currentColor and stays crisp at any size. */
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.06em;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: var(--text);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.wordmark:hover { text-decoration: none; }
+.wordmark .zero { width: 0.62em; height: 1em; color: var(--accent); }
+.wordmark .zero path { fill: currentColor; }
+
+.wordmark-lg { font-size: 1.6rem; letter-spacing: 0.26em; }
+
+.wordmark-stack { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; }
+
+/* HOMELAB · CLOUD · AUTOMATION, the rule-flanked tagline from the logo. */
+.tagline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.62rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.tagline::before, .tagline::after {
+  content: "";
+  height: 1px;
+  width: 26px;
+  background: linear-gradient(90deg, transparent, var(--accent-line));
+}
+.tagline::after { background: linear-gradient(90deg, var(--accent-line), transparent); }
+
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: none;
+  color: var(--accent);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%);
+  border: 1px solid var(--accent-line);
+  display: grid;
+  place-items: center;
+  padding: 6px;
+}
+.brand-mark svg { width: 100%; height: 100%; }
+.brand-mark path { fill: currentColor; }
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.btn {
+  --btn-bg: var(--glass-2);
+  --btn-fg: var(--text);
+  --btn-border: var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-size: 0.9rem;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.16s var(--ease), box-shadow 0.2s var(--ease),
+              background 0.2s var(--ease), border-color 0.2s var(--ease), opacity 0.2s;
+  text-decoration: none;
+}
+.btn:hover { transform: translateY(-1px); border-color: var(--accent-line); text-decoration: none; }
+.btn:active { transform: translateY(0); }
+.btn:disabled, .btn[aria-busy="true"] { opacity: 0.55; pointer-events: none; }
+
+.btn-primary {
+  --btn-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+  --btn-fg: var(--accent-ink);
+  --btn-border: transparent;
+  box-shadow: 0 8px 24px -10px var(--accent-glow);
+}
+.btn-primary:hover { box-shadow: 0 12px 30px -10px var(--accent-glow); }
+
+.btn-ghost { --btn-bg: transparent; --btn-border: var(--border); }
+.btn-danger { --btn-fg: var(--crit); --btn-border: color-mix(in srgb, var(--crit) 40%, transparent); }
+.btn-block { width: 100%; }
+.btn-sm { padding: 6px 12px; font-size: 0.82rem; }
+.btn-icon { padding: 8px; width: 36px; height: 36px; }
+
+/* --- Forms --------------------------------------------------------------- */
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+
+.field > label {
+  font-size: 0.78rem;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.input, select.input, textarea.input {
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(6, 11, 22, 0.68);
+  color: var(--text);
+  font-size: 0.92rem;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease), background 0.18s;
+}
+.input::placeholder { color: var(--text-faint); }
+.input:hover { border-color: var(--border-strong); }
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: rgba(6, 11, 22, 0.9);
+}
+.input[aria-invalid="true"] { border-color: var(--crit); }
+textarea.input { resize: vertical; min-height: 86px; }
+.input-mono { font-family: var(--font-mono); letter-spacing: 0.04em; }
+
+/* Password fields with a reveal toggle sitting inside the box. */
+.input-wrap { position: relative; display: flex; }
+.input-wrap .input { padding-right: 44px; }
+.input-affix {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.input-affix:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+/* --- Password strength meter -------------------------------------------- */
+
+.pw-meter { display: flex; flex-direction: column; gap: 6px; }
+.pw-bars { display: flex; gap: 4px; }
+.pw-bars span {
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(120, 160, 225, 0.16);
+  transition: background 0.25s var(--ease);
+}
+.pw-label { font-size: 0.74rem; color: var(--text-faint); min-height: 1.1em; }
+.pw-meter[data-score="0"] .pw-bars span:nth-child(-n+1),
+.pw-meter[data-score="1"] .pw-bars span:nth-child(-n+1) { background: var(--crit); }
+.pw-meter[data-score="2"] .pw-bars span:nth-child(-n+2) { background: var(--warn); }
+.pw-meter[data-score="3"] .pw-bars span:nth-child(-n+3) { background: #7ac943; }
+.pw-meter[data-score="4"] .pw-bars span { background: var(--ok); }
+.pw-meter[data-score="0"] .pw-label, .pw-meter[data-score="1"] .pw-label { color: var(--crit); }
+.pw-meter[data-score="2"] .pw-label { color: var(--warn); }
+.pw-meter[data-score="3"] .pw-label, .pw-meter[data-score="4"] .pw-label { color: var(--ok); }
+
+/* --- Alerts -------------------------------------------------------------- */
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  border: 1px solid;
+  animation: rise 0.28s var(--ease);
+}
+.alert-error { color: #ffc2cb; background: color-mix(in srgb, var(--crit) 12%, transparent); border-color: color-mix(in srgb, var(--crit) 34%, transparent); }
+.alert-ok    { color: #b6f5da; background: color-mix(in srgb, var(--ok) 12%, transparent);   border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+.alert-warn  { color: #ffe2ab; background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 34%, transparent); }
+.alert-info  { color: #cfe0ff; background: var(--accent-soft); border-color: var(--accent-line); }
+.alert[hidden] { display: none; }
+
+/* --- Badges & pills ------------------------------------------------------ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.badge-accent  { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.badge-ok      { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 36%, transparent);   background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.badge-warn    { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 36%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.badge-crit    { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 36%, transparent); background: color-mix(in srgb, var(--crit) 10%, transparent); }
+.badge-unknown { color: var(--unknown); }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.dot-live { box-shadow: 0 0 0 0 currentColor; animation: pulse 2.4s var(--ease) infinite; }
+
+/* --- Site chrome --------------------------------------------------------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--border);
+  background: rgba(4, 7, 14, 0.72);
+  -webkit-backdrop-filter: saturate(1.3) blur(16px);
+  backdrop-filter: saturate(1.3) blur(16px);
+}
+
+.site-header .shell {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: 66px;
+}
+
+.shell { width: min(100% - 40px, var(--shell)); margin-inline: auto; }
+
+.nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.nav a {
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  font-weight: 520;
+  transition: color 0.16s, background 0.16s;
+}
+.nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); text-decoration: none; }
+.nav a.is-active { color: var(--text); background: var(--accent-soft); }
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 90px;
+  padding: 34px 0 40px;
+  color: var(--text-faint);
+  font-size: 0.84rem;
+}
+.site-footer .shell { display: flex; flex-wrap: wrap; gap: 18px 34px; align-items: center; }
+.site-footer nav { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-left: auto; }
+.site-footer a { color: var(--text-dim); }
+.site-footer a:hover { color: var(--text); }
+
+/* --- Modal --------------------------------------------------------------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 4, 9, 0.72);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fade 0.2s var(--ease);
+}
+.modal[hidden] { display: none; }
+.modal-card {
+  width: min(100%, 560px);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  padding: 26px;
+  animation: rise 0.3s var(--ease);
+}
+.modal-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.modal-head h2 { font-size: 1.3rem; }
+.modal-close {
+  margin-left: auto;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: grid; place-items: center;
+  flex: none;
+}
+.modal-close:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* --- Chibi companion ----------------------------------------------------- */
+/* May, bottom-right, cycling through the chibi sticker set on click. The one
+   piece of the UI that exists purely for personality — so it is also the one
+   piece that must never get in the way: it is aria-hidden from the reading
+   order, sits behind modals, and remembers being dismissed. */
+
+.chibi {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.chibi[hidden] { display: none; }
+
+.chibi-btn {
+  width: 92px;
+  height: 92px;
+  padding: 0;
+  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  background: #030810;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--shadow), 0 0 0 0 var(--accent-glow);
+  transition: transform 0.24s var(--ease), box-shadow 0.24s var(--ease), border-color 0.2s;
+}
+.chibi-btn:hover { transform: translateY(-3px) scale(1.04); border-color: var(--accent-line); box-shadow: var(--shadow), 0 0 26px -4px var(--accent-glow); }
+.chibi-btn:active { transform: translateY(-1px) scale(0.99); }
+.chibi-btn img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; }
+.chibi-btn img.is-swapping { animation: chibi-pop 0.42s var(--ease); }
+
+.chibi-bubble {
+  max-width: 190px;
+  padding: 7px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--glass);
+  border: 1px solid var(--border-strong);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-align: right;
+  animation: rise 0.3s var(--ease);
+}
+.chibi-bubble[hidden] { display: none; }
+
+.chibi-dismiss {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--glass-solid);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  place-items: center;
+}
+.chibi:hover .chibi-dismiss { display: grid; }
+.chibi-dismiss:hover { color: var(--text); border-color: var(--crit); }
+.chibi-wrap { position: relative; }
+
+/* --- Language & theme controls ------------------------------------------ */
+
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: rgba(6, 11, 22, 0.6);
+}
+.lang-toggle button {
+  border: 0;
+  background: transparent;
+  color: var(--text-faint);
+  padding: 5px 12px;
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: color 0.16s, background 0.16s;
+}
+.lang-toggle button:hover { color: var(--text); }
+.lang-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+.swatch {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--border-strong);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.16s var(--ease), box-shadow 0.16s;
+}
+.swatch:hover { transform: scale(1.12); }
+.swatch[aria-pressed="true"] { border-color: var(--bg); box-shadow: 0 0 0 2px currentColor; }
+
+/* --- Utilities ----------------------------------------------------------- */
+
+.stack   { display: flex; flex-direction: column; }
+.gap-6   { gap: 6px; }  .gap-10 { gap: 10px; } .gap-14 { gap: 14px; }
+.gap-18  { gap: 18px; } .gap-24 { gap: 24px; } .gap-32 { gap: 32px; }
+.row     { display: flex; align-items: center; gap: 12px; }
+.row-wrap{ flex-wrap: wrap; }
+.push    { margin-left: auto; }
+.muted   { color: var(--text-dim); }
+.faint   { color: var(--text-faint); }
+.mono    { font-family: var(--font-mono); }
+.center  { text-align: center; }
+.eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 650;
+}
+.scroll-x { overflow-x: auto; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--glass-solid);
+  border: 1px solid var(--accent-line);
+  transition: top 0.2s var(--ease);
+}
+.skip-link:focus { top: 12px; }
+
+/* --- Animations ---------------------------------------------------------- */
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes chibi-pop {
+  0%   { transform: scale(0.72) rotate(-7deg); opacity: 0; }
+  60%  { transform: scale(1.06) rotate(2deg);  opacity: 1; }
+  100% { transform: none; }
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  70%  { box-shadow: 0 0 0 7px transparent; opacity: 0.75; }
+  100% { box-shadow: 0 0 0 0 transparent;  opacity: 1; }
+}
+@keyframes drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -14px, 0); }
+}
+
+.reveal { animation: rise 0.5s var(--ease) both; }
+.reveal-1 { animation-delay: 0.06s; }
+.reveal-2 { animation-delay: 0.12s; }
+.reveal-3 { animation-delay: 0.18s; }
+.reveal-4 { animation-delay: 0.24s; }
+
+/* Honour the OS setting. Everything above is decoration; none of it carries
+   meaning that is lost when it stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  #starfield { display: none; }
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .shell { width: calc(100% - 28px); }
+  .site-header .shell { height: 58px; gap: 12px; }
+  .nav { gap: 0; }
+  .nav a { padding: 6px 9px; font-size: 0.82rem; }
+  .chibi { right: 12px; bottom: 12px; }
+  .chibi-btn { width: 68px; height: 68px; border-radius: 16px; }
+  .chibi-bubble { max-width: 150px; font-size: 0.72rem; }
+  .sky-photo { opacity: 0.28; -webkit-mask-image: none; mask-image: none; }
+}

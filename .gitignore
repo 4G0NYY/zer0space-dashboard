@@ -3,13 +3,14 @@
 .env.*
 !.env.example
 
-# Node dependencies (installed in the image / locally for the migration script)
-node_modules/
-
-# Local SQLite databases (legacy — pre-PostgreSQL, kept out of git)
-*.db
-*.db-journal
-*.sqlite
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
 # OS noise
 .DS_Store

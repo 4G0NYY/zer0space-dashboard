@@ -1,0 +1,64 @@
+{#
+  Shared markup fragments.
+
+  The brand mark lives here as inline SVG rather than as an <img> so it inherits
+  currentColor — the theme picker recolours it for free, and it stays crisp at
+  every size the design uses (16 px favicon-ish through 160 px hero).
+
+  The glyph is the slashed octagonal zero from the zer0space logo, standing in
+  for the O in ZER0SPACE.
+#}
+
+{% macro zero_glyph(class="zero") -%}
+<svg class="{{ class }}" viewBox="0 0 44 64" aria-hidden="true" focusable="false">
+  <path fill-rule="evenodd" d="M13 1 H31 L43 13 V51 L31 63 H13 L1 51 V13 Z
+                               M17 12 H27 L34 19 V45 L27 52 H17 L10 45 V19 Z"/>
+  <path d="M13 46 L26 15 L33 15 L20 46 Z"/>
+</svg>
+{%- endmacro %}
+
+{% macro wordmark(href="/", size="", label="Zer0space") -%}
+<a class="wordmark {{ size }}" href="{{ href }}" aria-label="{{ label }}">ZER{{ zero_glyph() }}SPACE</a>
+{%- endmacro %}
+
+{% macro wordmark_static(size="") -%}
+<span class="wordmark {{ size }}">ZER{{ zero_glyph() }}SPACE</span>
+{%- endmacro %}
+
+{% macro brand_mark() -%}
+<span class="brand-mark" aria-hidden="true">{{ zero_glyph("") }}</span>
+{%- endmacro %}
+
+{% macro tagline() -%}
+<span class="tagline">Homelab &middot; Cloud &middot; Automation</span>
+{%- endmacro %}
+
+{#
+  DE/EN switch. The chosen language lives in localStorage (`zs-lang`) — it is a
+  per-browser display preference, deliberately not a database column, so
+  switching needs no round trip and no schema change.
+#}
+{% macro lang_toggle() -%}
+<div class="lang-toggle" role="group" aria-label="Language">
+  <button type="button" data-lang="de" aria-pressed="false">DE</button>
+  <button type="button" data-lang="en" aria-pressed="false">EN</button>
+</div>
+{%- endmacro %}
+
+{#
+  May, bottom right. Purely decorative, so aria-hidden and keyboard-skippable:
+  it must never sit between a user and the form they came for.
+#}
+{% macro chibi() -%}
+<div class="chibi" id="chibi" hidden>
+  <div class="chibi-bubble" id="chibi-bubble" hidden></div>
+  <div class="chibi-wrap">
+    <button type="button" class="chibi-btn" id="chibi-btn"
+            data-i18n-title="chibi.title" title="May sagt hallo" aria-hidden="true" tabindex="-1">
+      <img id="chibi-img" src="/static/img/chibi-01.jpg" alt="">
+    </button>
+    <button type="button" class="chibi-dismiss" id="chibi-dismiss"
+            data-i18n-aria="chibi.hide" aria-label="May ausblenden">&times;</button>
+  </div>
+</div>
+{%- endmacro %}

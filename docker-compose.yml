@@ -44,6 +44,11 @@ services:
       - DB_PORT=${DB_PORT:-5432}
       - DB_NAME=${DB_NAME:-zer0space}
       - DB_USER=${DB_USER:-dashboard}
+      # ── Maintenance ────────────────────────────────────────────────────────────────────
+      # Serves templates/maintenance.html for every request except /healthz and
+      # /static/*. An env flag rather than a DB setting on purpose: the situation
+      # you need it for is "the database is unreachable".
+      - MAINTENANCE_MODE=${MAINTENANCE_MODE:-false}
     secrets:
       # Read from /run/secrets/<name> by src/db.js and src/server.js, which fall
       # back to the matching env var only when the file is absent.
@@ -53,9 +58,9 @@ services:
       # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
       # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
       #
-      # This mount is still required AFTER the PostgreSQL migration. The database
-      # itself is gone (services.db now lives on zs-state-01), but /data still holds
-      # files that are not DB rows:
+      # This mount is still required. The dashboard holds no database state of its
+      # own (that lives on zs-state-01), but /data still holds files that are not
+      # DB rows:
       #   /data/background/     uploaded background images
       #   /data/backup-status/  JSON files written per node by the backup script
       # Only once both live elsewhere can this volume be dropped.
@@ -69,15 +74,19 @@ services:
       - dashboard_net
       - cloudflared_proxy
     deploy:
+      # replicas MUST stay at 1. The session store is in-process memory and holds
+      # the per-user vault key (src/auth.py explains why it cannot live anywhere
+      # else). A second replica would serve requests that cannot see the session
+      # the first one created, which reads to the user as random logouts.
       replicas: 1
-      # No node.hostname pinning anymore — the data lives on NFS, so the service
-      # may run on any node.
-      # NOTE: the dashboard container reaches the socketproxy over the "dashboard_net"
-      # overlay. The socketproxy MUST stay on a manager (only managers answer /nodes,
-      # /services and /tasks). While the known VXLAN issue towards zs-worker-01/02
-      # exists, the Swarm status can break if the dashboard is scheduled there.
-      # Fallback in that case:
-      #   placement: { constraints: [node.role == manager] }
+      placement:
+        constraints:
+          # TEMPORARY: pinned next to the socketproxy while the GHCR push is being
+          # sorted out, so the image can be built locally on this node and the
+          # dashboard can still reach /nodes, /services and /tasks over the
+          # overlay. Remove this constraint once the image is pulled from GHCR —
+          # the data lives on NFS, so the service may otherwise run anywhere.
+          - node.hostname == zs-node-01
       resources:
         limits:
           cpus: '0.50'

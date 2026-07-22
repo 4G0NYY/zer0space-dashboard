@@ -1,0 +1,53 @@
+{% import "_macros.html" as ui %}<!doctype html>
+{#
+  Every page extends this. Blocks, in the order they are useful:
+
+    title      <title> text
+    page_css   one page stylesheet, loaded after main.css
+    sky        an optional artwork layer behind everything
+    body       the page itself
+    scripts    page scripts, loaded after i18n.js
+
+  There is no inline <script> anywhere in this project. The CSP has no
+  'unsafe-inline' in script-src, so an inline block would simply not run — that
+  is deliberate, and it is why boot.js exists.
+#}
+<html lang="de" data-theme="aurora">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="{% block description %}Zer0space — self-hosted platform for your data, services and automation.{% endblock %}">
+  <title>{% block title %}Zer0space{% endblock %}</title>
+
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/img/logo-icon.png">
+
+  <link rel="stylesheet" href="/static/css/main.css?v={{ asset_version }}">
+  {% block page_css %}{% endblock %}
+
+  {# Applies the stored theme and language before first paint. Without it the
+     page renders in the default accent and in German for a frame, then snaps. #}
+  <script src="/static/js/boot.js?v={{ asset_version }}" defer></script>
+</head>
+
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main" data-i18n="a11y.skip">Zum Inhalt springen</a>
+
+  <div class="sky" aria-hidden="true"></div>
+  <canvas id="starfield" aria-hidden="true"></canvas>
+  {% block sky %}{% endblock %}
+
+  {% block body %}{% endblock %}
+
+  {% block chibi %}{{ ui.chibi() }}{% endblock %}
+
+  {# i18n.js defines window.t and window.I18N and must load before any page
+     script that calls them. #}
+  <script src="/static/js/i18n.js?v={{ asset_version }}"></script>
+  <script src="/static/js/ui.js?v={{ asset_version }}" defer></script>
+  <script src="/static/js/starfield.js?v={{ asset_version }}" defer></script>
+  <script src="/static/js/chibi.js?v={{ asset_version }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

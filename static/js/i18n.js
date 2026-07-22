@@ -1,0 +1,755 @@
+/* ==========================================================================
+   German / English, switchable at runtime.
+
+   Defines window.t and window.I18N and must therefore load BEFORE any page
+   script that calls them.
+
+   When you add or change a user-facing string, three places move together:
+
+   1. Add the key to BOTH dictionaries below. They are kept at exact parity — a
+      key present in one and missing from the other is a bug, and checkParity()
+      says so in the console during development.
+   2. In markup, put the key in an attribute rather than hardcoding text:
+      data-i18n (textContent), data-i18n-ph (placeholder), data-i18n-title,
+      data-i18n-aria (aria-label), data-i18n-alt. Leave the German text inside
+      the element as the pre-JS default.
+   3. In JavaScript call t('key') — never a literal. t('key', { name }) fills
+      {name} style placeholders.
+
+   Server-side messages are NOT translated on the server. Every error response
+   carries a stable `code`; I18N.tError(data) resolves it to an `err.<CODE>` key
+   and falls back to the server's English text when the key is missing, so a
+   forgotten translation degrades to English rather than to a blank.
+
+   The chosen language lives in localStorage (`zs-lang`) — a per-browser display
+   preference, deliberately not a database column, so switching needs no round
+   trip and no schema change.
+   ========================================================================== */
+
+(function () {
+  'use strict';
+
+  var de = {
+    'a11y.skip': 'Zum Inhalt springen',
+
+    'nav.home': 'Start',
+    'nav.features': 'Features',
+    'nav.docs': 'Docs',
+    'nav.about': 'Über',
+    'nav.signIn': 'Anmelden',
+    'nav.signOut': 'Abmelden',
+    'nav.openMenu': 'Menü öffnen',
+    'nav.closeMenu': 'Menü schließen',
+
+    'common.username': 'Benutzername',
+    'common.password': 'Passwort',
+    'common.name': 'Name',
+    'common.description': 'Beschreibung',
+    'common.status': 'Status',
+    'common.type': 'Typ',
+    'common.result': 'Ergebnis',
+    'common.close': 'Schließen',
+    'common.cancel': 'Abbrechen',
+    'common.save': 'Speichern',
+    'common.edit': 'Bearbeiten',
+    'common.delete': 'Löschen',
+    'common.copy': 'Kopieren',
+    'common.copied': 'Kopiert',
+    'common.refresh': 'Aktualisieren',
+    'common.or': 'oder',
+    'common.min12': 'Mindestens 12 Zeichen',
+    'common.showPassword': 'Passwort anzeigen',
+    'common.hidePassword': 'Passwort verbergen',
+    'common.never': 'nie',
+    'common.loading': 'Lädt …',
+    'common.offline': 'Offline',
+    'common.online': 'Online',
+    'common.unknown': 'Unbekannt',
+    'common.confirm': 'Wirklich?',
+    'common.saved': 'Gespeichert',
+
+    'landing.eyebrow': 'Homelab · Cloud · Automation',
+    'landing.welcome': 'Willkommen bei',
+    'landing.sub': 'Selbst gehostet. Sicher. Automatisiert.',
+    'landing.lede': 'Neun Maschinen, ein Fenster. Dienste, Metriken, Backups und ein verschlüsselter Passwort-Tresor — alles auf eigener Hardware, hinter einer Tür, die sich nur von innen öffnet.',
+    'landing.getStarted': 'Loslegen',
+    'landing.toDashboard': 'Zum Dashboard',
+    'landing.github': 'Auf GitHub ansehen',
+    'landing.inviteOnly': 'Registrierung nur mit Einladungscode.',
+    'landing.featuresTitle': 'Was hier läuft',
+    'landing.featuresSub': 'Drei Bausteine, ein Cluster, kein Cloud-Abo.',
+    'landing.f1Title': 'Homelab',
+    'landing.f1Body': 'Ein Docker-Swarm aus neun Maschinen. Sieben davon austauschbar — stirbt eine, läuft die Arbeit woanders weiter. Zwei nicht: Dateien und Datenbank.',
+    'landing.f2Title': 'Cloud',
+    'landing.f2Body': 'Eigene Dienste statt fremder Server. Erreichbar über einen Tunnel, den das Netz selbst öffnet — von außen gibt es keine Tür zum Klopfen.',
+    'landing.f3Title': 'Automation',
+    'landing.f3Body': 'Backups, Metriken und Statusmeldungen laufen ohne Zutun. Das Log sagt, was wirklich passiert ist — auch wenn das „noch nicht" heißt.',
+    'landing.ctaTitle': 'Schon eingeladen?',
+    'landing.ctaBody': 'Mit einem Einladungscode dauert das Anlegen des Kontos eine Minute.',
+    'landing.ctaRegister': 'Konto erstellen',
+    'landing.ctaLogin': 'Anmelden',
+
+    'footer.status': 'Status',
+
+    'about.title': 'Über Zer0space',
+    'about.kicker': 'Selbst gehostet. Sicher. Automatisiert.',
+    'about.body': 'Zer0space ist eine selbstgehostete Plattform für eigene Daten, Dienste und Automatisierung. Mit Leidenschaft gebaut, läuft auf Docker, angetrieben von Open Source.',
+    'about.learnMore': 'Mehr auf GitHub',
+
+    'login.title': 'Willkommen zurück',
+    'login.sub': 'Melde dich an, um zu deinem Dashboard zu gelangen.',
+    'login.usernamePh': 'Benutzername',
+    'login.passwordPh': 'Passwort',
+    'login.remember': 'Angemeldet bleiben',
+    'login.submit': 'Anmelden',
+    'login.registerCta': 'Mit Einladungscode registrieren',
+    'login.noAccount': 'Noch kein Konto?',
+    'login.askAdmin': 'Frag einen Admin nach einem Code',
+    'login.quote': '„Neun Maschinen, ein ehrliches Log, eine Tür, die sich nur nach außen öffnet."',
+    'login.working': 'Anmelden …',
+
+    'register.title': 'Konto erstellen',
+    'register.sub': 'Ein Einladungscode ist der einzige Weg zu einem Konto. Wer keinen hat, bekommt ihn von einem Admin.',
+    'register.code': 'Einladungscode',
+    'register.usernamePh': '3–32 Zeichen: a–z 0–9 . _ -',
+    'register.confirm': 'Passwort bestätigen',
+    'register.confirmPh': 'Passwort wiederholen',
+    'register.submit': 'Konto erstellen',
+    'register.haveAccount': 'Schon ein Konto?',
+    'register.quote': '„Halte nichts, was du nicht verlieren kannst."',
+    'register.mismatch': 'Die Passwörter stimmen nicht überein.',
+    'register.success': 'Konto erstellt. Du wirst zur Anmeldung weitergeleitet …',
+    'register.working': 'Konto wird erstellt …',
+
+    'setup.eyebrow': 'Ersteinrichtung',
+    'setup.title': 'Admin-Konto anlegen',
+    'setup.sub': 'Dieses Formular gibt es genau einmal. Sobald das erste Konto existiert, ist /setup dauerhaft geschlossen und jedes weitere Konto entsteht über einen Einladungscode.',
+    'setup.notice': 'Das Passwort wird sofort mit bcrypt gehasht. Es gibt keinen Reset-Link und keine Kopie — geht es verloren, hilft nur noch der Break-Glass-Weg über scripts/unlock-user.py.',
+    'setup.submit': 'Admin-Konto erstellen',
+    'setup.success': 'Admin-Konto erstellt. Weiter zur Anmeldung …',
+    'setup.working': 'Konto wird erstellt …',
+
+    'err404.title': 'Lost in space?',
+    'err404.sub': 'Die Seite, die du suchst, gibt es nicht.',
+    'err404.toDashboard': 'Zum Dashboard',
+    'err404.toHome': 'Zur Startseite',
+
+    'maint.badge': 'Wartung',
+    'maint.kicker': 'Wir verbessern gerade',
+    'maint.sub': 'Wartung läuft. Bitte versuche es später noch einmal.',
+    'maint.viewStatus': 'Status ansehen',
+    'maint.retry': 'Erneut versuchen',
+
+    'loading.text': 'Lade dein Universum …',
+
+    'chibi.title': 'May sagt hallo',
+    'chibi.hide': 'May ausblenden',
+
+    'view.home': 'Übersicht',
+    'view.ai': 'AI',
+    'view.cloud': 'Cloud',
+    'view.vault': 'Tresor',
+    'view.settings': 'Einstellungen',
+
+    'greeting.morning': 'Guten Morgen, {name}.',
+    'greeting.day': 'Hallo, {name}.',
+    'greeting.evening': 'Guten Abend, {name}.',
+    'greeting.night': 'Noch wach, {name}?',
+
+    'home.swarmNodes': 'Swarm-Nodes',
+    'home.standalone': 'Standalone-Hosts',
+    'home.standaloneHint': 'Bewusst außerhalb des Clusters',
+    'home.services': 'Dienste',
+    'home.noServices': 'Noch keine Dienste eingetragen.',
+    'home.noServicesCat': 'In diesem Bereich ist noch nichts eingetragen.',
+    'home.noNodes': 'Keine Node-Daten — der Docker-Proxy antwortet nicht.',
+    'home.nodesCaption': '{online} von {total} liefern Metriken',
+    'home.servicesCaption': '{count} eingetragen',
+
+    'tile.nodes': 'Nodes online',
+    'tile.services': 'Swarm-Dienste',
+    'tile.cluster': 'Cluster-Status',
+    'tile.infrastructure': 'Infrastruktur',
+    'tile.backup': 'Backup',
+    'tile.nodesDetail': 'Swarm-Mitglieder mit Glances-Antwort',
+    'tile.servicesDetail': 'laufende Services',
+    'tile.infraDetail': 'Standalone-Hosts erreichbar',
+    'tile.backupNever': 'Noch kein Backup gemeldet',
+    'tile.backupNodes': '{count} Node(s) melden',
+
+    'cluster.ALL_REACHABLE': 'Alle Manager erreichbar',
+    'cluster.MANAGER_UNREACHABLE': 'Ein Manager antwortet nicht',
+    'cluster.NO_LEADER': 'Kein Leader — Quorum verloren',
+    'cluster.NODE_DOWN': 'Nicht alle Nodes bereit',
+    'cluster.NO_MANAGERS': 'Keine Manager gefunden',
+    'cluster.PROXY_UNAVAILABLE': 'Docker-Proxy nicht erreichbar',
+    'cluster.healthy': 'Gesund',
+    'cluster.warning': 'Warnung',
+    'cluster.critical': 'Kritisch',
+    'cluster.unknown': 'Unbekannt',
+
+    'backup.ok': 'Aktuell',
+    'backup.stale': 'Veraltet',
+    'backup.failed': 'Fehlgeschlagen',
+    'backup.unknown': 'Unbekannt',
+
+    'metric.cpu': 'CPU',
+    'metric.ram': 'RAM',
+    'metric.disk': 'Disk',
+    'metric.net': 'Netz',
+    'metric.offline': 'Keine Antwort von Glances',
+
+    'role.admin': 'Admin',
+    'role.viewer': 'Viewer',
+
+    'cat.general': 'Allgemein',
+    'cat.ai': 'AI',
+    'cat.cloud': 'Cloud',
+    'cat.tools': 'Werkzeuge',
+
+    'vault.title': 'Passwort-Tresor',
+    'vault.sub': 'AES-256-GCM. Der Schlüssel wird beim Login aus deinem Passwort abgeleitet und liegt nur im Server-Speicher — nie in der Datenbank.',
+    'vault.new': 'Neuer Eintrag',
+    'vault.editTitle': 'Eintrag bearbeiten',
+    'vault.search': 'Einträge durchsuchen …',
+    'vault.fieldTitle': 'Titel',
+    'vault.notes': 'Notizen',
+    'vault.generate': 'Passwort erzeugen',
+    'vault.empty': 'Der Tresor ist leer. Leg den ersten Eintrag an.',
+    'vault.noMatch': 'Kein Eintrag passt zur Suche.',
+    'vault.copyPw': 'Passwort kopieren',
+    'vault.broken': 'Nicht entschlüsselbar — mit einem anderen Schlüssel gespeichert.',
+    'vault.confirmDelete': '„{title}" endgültig löschen?',
+
+    'settings.appearance': 'Darstellung',
+    'settings.accent': 'Akzentfarbe',
+    'settings.custom': 'Eigene Farbe',
+    'settings.language': 'Sprache',
+    'settings.chibi': 'May unten rechts anzeigen',
+    'settings.password': 'Passwort ändern',
+    'settings.currentPw': 'Aktuelles Passwort',
+    'settings.newPw': 'Neues Passwort',
+    'settings.pwNote': 'Deine Tresor-Einträge werden dabei automatisch mit dem neuen Schlüssel neu verschlüsselt.',
+    'settings.savePw': 'Passwort ändern',
+    'settings.pwChanged': 'Passwort geändert. Der Tresor wurde neu verschlüsselt.',
+    'settings.invites': 'Einladungscodes',
+    'settings.invitesSub': 'Nach der Ersteinrichtung ist ein Code der einzige Weg zu einem neuen Konto.',
+    'settings.inviteExpiry': 'Gültig (Tage)',
+    'settings.inviteRole': 'Maximale Rolle',
+    'settings.inviteCreate': 'Code erzeugen',
+    'settings.inviteFresh': 'Neuer Code',
+    'settings.inviteMeta': 'Rolle {role} · gültig bis {date}',
+    'settings.copyLink': 'Link kopieren',
+    'settings.code': 'Code',
+    'settings.expires': 'Läuft ab',
+    'settings.usedBy': 'Eingelöst von',
+    'settings.revoke': 'Widerrufen',
+    'settings.noInvites': 'Noch keine Codes erzeugt.',
+    'settings.confirmRevoke': 'Diesen Einladungscode widerrufen?',
+    'settings.users': 'Benutzer',
+    'settings.role': 'Rolle',
+    'settings.unlock': 'Entsperren',
+    'settings.lock': 'Sperren',
+    'settings.resetPw': 'Passwort zurücksetzen',
+    'settings.resetWarning': 'Der Tresor dieses Kontos wird dabei gelöscht. Ein Admin kennt das alte Passwort nicht und kann den Schlüssel nicht neu ableiten — die Einträge wären sonst dauerhaft unlesbar.',
+    'settings.resetConfirm': 'Zurücksetzen und Tresor löschen',
+    'settings.pwReset': 'Passwort zurückgesetzt. Der Tresor dieses Kontos wurde gelöscht.',
+    'settings.confirmDeleteUser': 'Konto „{name}" löschen? Der Tresor dieses Kontos geht dabei verloren.',
+    'settings.servicesAdmin': 'Dienste verwalten',
+    'settings.serviceNew': 'Dienst hinzufügen',
+    'settings.serviceEdit': 'Dienst bearbeiten',
+    'settings.category': 'Bereich',
+    'settings.noServices': 'Noch keine Dienste eingetragen.',
+    'settings.confirmDeleteService': 'Dienst „{name}" löschen?',
+    'settings.audit': 'Login-Versuche',
+    'settings.auditSub': 'Zeigt, ob gerade jemand anklopft.',
+    'settings.when': 'Zeitpunkt',
+    'settings.noAttempts': 'Keine Einträge.',
+    'settings.locked': 'Gesperrt',
+    'settings.lockedUntil': 'Gesperrt bis {time}',
+    'settings.active': 'Aktiv',
+
+    'status.active': 'Aktiv',
+    'status.used': 'Eingelöst',
+    'status.expired': 'Abgelaufen',
+    'status.success': 'Erfolg',
+    'status.failed': 'Fehlgeschlagen',
+
+    'pw.0': 'Sehr schwach',
+    'pw.1': 'Schwach',
+    'pw.2': 'Mittel',
+    'pw.3': 'Gut',
+    'pw.4': 'Stark',
+
+    'err.BAD_CREDENTIALS': 'Benutzername oder Passwort ist falsch.',
+    'err.INPUT_MISSING': 'Bitte beide Felder ausfüllen.',
+    'err.RATE_LIMITED': 'Zu viele Versuche. Bitte in {retryAfterMinutes} Minuten erneut versuchen.',
+    'err.ACCOUNT_LOCKED': 'Konto gesperrt nach wiederholten Fehlversuchen. Ein Admin kann es entsperren.',
+    'err.UNAUTHORIZED': 'Nicht angemeldet.',
+    'err.FORBIDDEN_ADMIN': 'Dafür fehlen dir die Rechte.',
+    'err.CSRF_INVALID': 'Sitzung abgelaufen. Bitte Seite neu laden.',
+    'err.INVITE_INVALID': 'Einladungscode ungültig oder abgelaufen.',
+    'err.INVITE_QUOTA': 'Einladungslimit erreicht. Später erneut versuchen.',
+    'err.INVITE_EXPIRY_INVALID': 'Gültigkeit muss zwischen 1 und 90 Tagen liegen.',
+    'err.INVITE_NOT_FOUND': 'Code nicht gefunden oder bereits eingelöst.',
+    'err.PW_MISSING': 'Bitte ein Passwort eingeben.',
+    'err.PW_TOO_SHORT': 'Das Passwort muss mindestens 12 Zeichen haben.',
+    'err.PW_TOO_LONG': 'Das Passwort darf höchstens 72 Bytes lang sein.',
+    'err.PW_CURRENT_WRONG': 'Das aktuelle Passwort ist falsch.',
+    'err.USERNAME_MISSING': 'Bitte einen Benutzernamen eingeben.',
+    'err.USERNAME_INVALID': 'Benutzername: 3–32 Zeichen, erlaubt sind a–z, 0–9 sowie . _ -',
+    'err.USERNAME_TAKEN': 'Dieser Benutzername ist bereits vergeben.',
+    'err.SETUP_CLOSED': 'Die Ersteinrichtung ist bereits abgeschlossen.',
+    'err.DB_UNAVAILABLE': 'Datenbank nicht erreichbar. Bitte später erneut versuchen.',
+    'err.PROXY_UNAVAILABLE': 'Docker-Proxy nicht erreichbar — Cluster-Daten fehlen.',
+    'err.VAULT_LOCKED': 'Der Tresor ist gesperrt. Melde dich ab und wieder an.',
+    'err.VAULT_TITLE_REQUIRED': 'Ein Titel wird benötigt.',
+    'err.VAULT_TITLE_TOO_LONG': 'Der Titel ist zu lang.',
+    'err.VAULT_USERNAME_TOO_LONG': 'Der Benutzername ist zu lang.',
+    'err.VAULT_PASSWORD_TOO_LONG': 'Das Passwort ist zu lang.',
+    'err.VAULT_NOTES_TOO_LONG': 'Die Notizen sind zu lang.',
+    'err.VAULT_URL_TOO_LONG': 'Die URL ist zu lang.',
+    'err.ENTRY_NOT_FOUND': 'Eintrag nicht gefunden.',
+    'err.SERVICE_NAME_REQUIRED': 'Ein Name wird benötigt.',
+    'err.SERVICE_NAME_TOO_LONG': 'Der Name ist zu lang.',
+    'err.SERVICE_DESC_TOO_LONG': 'Die Beschreibung ist zu lang.',
+    'err.SERVICE_URL_TOO_LONG': 'Die URL ist zu lang.',
+    'err.SERVICE_ICON_TOO_LONG': 'Der Icon-Name ist zu lang.',
+    'err.SERVICE_CATEGORY_INVALID': 'Unbekannter Bereich.',
+    'err.SERVICE_STATUS_INVALID': 'Unbekannter Status.',
+    'err.SERVICE_NOT_FOUND': 'Dienst nicht gefunden.',
+    'err.USER_NOT_FOUND': 'Benutzer nicht gefunden.',
+    'err.INVALID_ROLE': 'Unbekannte Rolle.',
+    'err.INVALID_ID': 'Ungültige ID.',
+    'err.LAST_ADMIN_DEMOTE': 'Der letzte Admin kann nicht herabgestuft werden.',
+    'err.LAST_ADMIN_DELETE': 'Der letzte Admin kann nicht gelöscht werden.',
+    'err.LAST_ADMIN_LOCK': 'Der letzte Admin kann nicht gesperrt werden.',
+    'err.SELF_DELETE': 'Du kannst dein eigenes Konto nicht löschen.',
+    'err.SELF_LOCK': 'Du kannst dein eigenes Konto nicht sperren.',
+    'err.THEME_REQUIRED': 'Bitte eine Farbe wählen.',
+    'err.THEME_INVALID': 'Ungültige Farbe.',
+    'err.SETTING_UNKNOWN': 'Unbekannte Einstellung.',
+    'err.SETTING_TOO_LONG': 'Wert zu lang.',
+    'err.KEY_VALUE_REQUIRED': 'Schlüssel und Wert werden benötigt.',
+    'err.FIELDS_MISSING': 'Bitte alle Felder ausfüllen.',
+    'err.BAD_JSON': 'Ungültige Anfrage.',
+    'err.NOT_FOUND': 'Nicht gefunden.',
+    'err.INTERNAL': 'Interner Fehler. Bitte später erneut versuchen.',
+    'err.NETWORK': 'Server nicht erreichbar. Verbindung prüfen.'
+  };
+
+  var en = {
+    'a11y.skip': 'Skip to content',
+
+    'nav.home': 'Home',
+    'nav.features': 'Features',
+    'nav.docs': 'Docs',
+    'nav.about': 'About',
+    'nav.signIn': 'Sign in',
+    'nav.signOut': 'Sign out',
+    'nav.openMenu': 'Open menu',
+    'nav.closeMenu': 'Close menu',
+
+    'common.username': 'Username',
+    'common.password': 'Password',
+    'common.name': 'Name',
+    'common.description': 'Description',
+    'common.status': 'Status',
+    'common.type': 'Type',
+    'common.result': 'Result',
+    'common.close': 'Close',
+    'common.cancel': 'Cancel',
+    'common.save': 'Save',
+    'common.edit': 'Edit',
+    'common.delete': 'Delete',
+    'common.copy': 'Copy',
+    'common.copied': 'Copied',
+    'common.refresh': 'Refresh',
+    'common.or': 'or',
+    'common.min12': 'At least 12 characters',
+    'common.showPassword': 'Show password',
+    'common.hidePassword': 'Hide password',
+    'common.never': 'never',
+    'common.loading': 'Loading …',
+    'common.offline': 'Offline',
+    'common.online': 'Online',
+    'common.unknown': 'Unknown',
+    'common.confirm': 'Are you sure?',
+    'common.saved': 'Saved',
+
+    'landing.eyebrow': 'Homelab · Cloud · Automation',
+    'landing.welcome': 'Welcome to',
+    'landing.sub': 'Self-hosted. Secure. Automated.',
+    'landing.lede': 'Nine machines, one window. Services, metrics, backups and an encrypted password vault — all on your own hardware, behind a door that only opens from the inside.',
+    'landing.getStarted': 'Get Started',
+    'landing.toDashboard': 'Go to dashboard',
+    'landing.github': 'View on GitHub',
+    'landing.inviteOnly': 'Registration is invite-only.',
+    'landing.featuresTitle': 'What runs here',
+    'landing.featuresSub': 'Three building blocks, one cluster, no cloud subscription.',
+    'landing.f1Title': 'Homelab',
+    'landing.f1Body': 'A Docker Swarm of nine machines. Seven of them interchangeable on purpose — any one can die and the work starts again somewhere else. Two are not: files and database.',
+    'landing.f2Title': 'Cloud',
+    'landing.f2Body': 'Your own services instead of somebody else’s servers. Reachable through a tunnel the network opens itself — from the outside there is no door to knock on.',
+    'landing.f3Title': 'Automation',
+    'landing.f3Body': 'Backups, metrics and status reports run on their own. The log says what actually happened — even when that means "not yet".',
+    'landing.ctaTitle': 'Already invited?',
+    'landing.ctaBody': 'With an invitation code, creating the account takes a minute.',
+    'landing.ctaRegister': 'Create account',
+    'landing.ctaLogin': 'Sign in',
+
+    'footer.status': 'Status',
+
+    'about.title': 'About Zer0space',
+    'about.kicker': 'Self-hosted. Secure. Automated.',
+    'about.body': 'Zer0space is a self-hosted platform for your data, services and automation. Built with passion, running on Docker, and powered by open source.',
+    'about.learnMore': 'Learn more on GitHub',
+
+    'login.title': 'Welcome back',
+    'login.sub': 'Sign in to continue to your dashboard.',
+    'login.usernamePh': 'Username',
+    'login.passwordPh': 'Password',
+    'login.remember': 'Remember me',
+    'login.submit': 'Sign in',
+    'login.registerCta': 'Register with invite code',
+    'login.noAccount': 'No account yet?',
+    'login.askAdmin': 'Ask an admin for a code',
+    'login.quote': '"Nine machines, one honest log, and a door that only opens outward."',
+    'login.working': 'Signing in …',
+
+    'register.title': 'Create account',
+    'register.sub': 'An invitation code is the only way to an account. If you do not have one, an admin can issue it.',
+    'register.code': 'Invitation code',
+    'register.usernamePh': '3–32 characters: a–z 0–9 . _ -',
+    'register.confirm': 'Confirm password',
+    'register.confirmPh': 'Repeat password',
+    'register.submit': 'Create account',
+    'register.haveAccount': 'Already have an account?',
+    'register.quote': '"Hold nothing you cannot afford to lose."',
+    'register.mismatch': 'The two passwords do not match.',
+    'register.success': 'Account created. Taking you to the sign-in page …',
+    'register.working': 'Creating account …',
+
+    'setup.eyebrow': 'First-run setup',
+    'setup.title': 'Create your admin account',
+    'setup.sub': 'This form exists exactly once. As soon as the first account exists, /setup is permanently closed and every further account comes from an invitation code.',
+    'setup.notice': 'The password is hashed with bcrypt the moment it arrives. There is no reset link and no copy — if it is lost, the break-glass path via scripts/unlock-user.py is all that is left.',
+    'setup.submit': 'Create admin account',
+    'setup.success': 'Admin account created. Continuing to sign-in …',
+    'setup.working': 'Creating account …',
+
+    'err404.title': 'Lost in space?',
+    'err404.sub': 'The page you’re looking for doesn’t exist.',
+    'err404.toDashboard': 'Go to Dashboard',
+    'err404.toHome': 'Go to home',
+
+    'maint.badge': 'Maintenance',
+    'maint.kicker': 'We’re improving',
+    'maint.sub': 'Maintenance in progress. Please try again later.',
+    'maint.viewStatus': 'View Status',
+    'maint.retry': 'Try again',
+
+    'loading.text': 'Loading your universe …',
+
+    'chibi.title': 'May says hi',
+    'chibi.hide': 'Hide May',
+
+    'view.home': 'Overview',
+    'view.ai': 'AI',
+    'view.cloud': 'Cloud',
+    'view.vault': 'Vault',
+    'view.settings': 'Settings',
+
+    'greeting.morning': 'Good morning, {name}.',
+    'greeting.day': 'Hello, {name}.',
+    'greeting.evening': 'Good evening, {name}.',
+    'greeting.night': 'Still up, {name}?',
+
+    'home.swarmNodes': 'Swarm nodes',
+    'home.standalone': 'Standalone hosts',
+    'home.standaloneHint': 'Outside the cluster on purpose',
+    'home.services': 'Services',
+    'home.noServices': 'No services configured yet.',
+    'home.noServicesCat': 'Nothing in this section yet.',
+    'home.noNodes': 'No node data — the Docker proxy is not answering.',
+    'home.nodesCaption': '{online} of {total} reporting metrics',
+    'home.servicesCaption': '{count} configured',
+
+    'tile.nodes': 'Nodes online',
+    'tile.services': 'Swarm services',
+    'tile.cluster': 'Cluster status',
+    'tile.infrastructure': 'Infrastructure',
+    'tile.backup': 'Backup',
+    'tile.nodesDetail': 'Swarm members answering Glances',
+    'tile.servicesDetail': 'services running',
+    'tile.infraDetail': 'standalone hosts reachable',
+    'tile.backupNever': 'No backup reported yet',
+    'tile.backupNodes': '{count} node(s) reporting',
+
+    'cluster.ALL_REACHABLE': 'All managers reachable',
+    'cluster.MANAGER_UNREACHABLE': 'A manager is not answering',
+    'cluster.NO_LEADER': 'No leader — quorum lost',
+    'cluster.NODE_DOWN': 'Not every node is ready',
+    'cluster.NO_MANAGERS': 'No managers found',
+    'cluster.PROXY_UNAVAILABLE': 'Docker proxy unreachable',
+    'cluster.healthy': 'Healthy',
+    'cluster.warning': 'Warning',
+    'cluster.critical': 'Critical',
+    'cluster.unknown': 'Unknown',
+
+    'backup.ok': 'Current',
+    'backup.stale': 'Stale',
+    'backup.failed': 'Failed',
+    'backup.unknown': 'Unknown',
+
+    'metric.cpu': 'CPU',
+    'metric.ram': 'RAM',
+    'metric.disk': 'Disk',
+    'metric.net': 'Net',
+    'metric.offline': 'No answer from Glances',
+
+    'role.admin': 'Admin',
+    'role.viewer': 'Viewer',
+
+    'cat.general': 'General',
+    'cat.ai': 'AI',
+    'cat.cloud': 'Cloud',
+    'cat.tools': 'Tools',
+
+    'vault.title': 'Password vault',
+    'vault.sub': 'AES-256-GCM. The key is derived from your password at sign-in and lives only in server memory — never in the database.',
+    'vault.new': 'New entry',
+    'vault.editTitle': 'Edit entry',
+    'vault.search': 'Search entries …',
+    'vault.fieldTitle': 'Title',
+    'vault.notes': 'Notes',
+    'vault.generate': 'Generate password',
+    'vault.empty': 'The vault is empty. Add the first entry.',
+    'vault.noMatch': 'No entry matches that search.',
+    'vault.copyPw': 'Copy password',
+    'vault.broken': 'Cannot be decrypted — stored with a different key.',
+    'vault.confirmDelete': 'Delete "{title}" permanently?',
+
+    'settings.appearance': 'Appearance',
+    'settings.accent': 'Accent colour',
+    'settings.custom': 'Custom colour',
+    'settings.language': 'Language',
+    'settings.chibi': 'Show May in the corner',
+    'settings.password': 'Change password',
+    'settings.currentPw': 'Current password',
+    'settings.newPw': 'New password',
+    'settings.pwNote': 'Your vault entries are automatically re-encrypted with the new key.',
+    'settings.savePw': 'Change password',
+    'settings.pwChanged': 'Password changed. The vault was re-encrypted.',
+    'settings.invites': 'Invitation codes',
+    'settings.invitesSub': 'After first-run setup, a code is the only way to a new account.',
+    'settings.inviteExpiry': 'Valid for (days)',
+    'settings.inviteRole': 'Maximum role',
+    'settings.inviteCreate': 'Generate code',
+    'settings.inviteFresh': 'New code',
+    'settings.inviteMeta': 'Role {role} · valid until {date}',
+    'settings.copyLink': 'Copy link',
+    'settings.code': 'Code',
+    'settings.expires': 'Expires',
+    'settings.usedBy': 'Redeemed by',
+    'settings.revoke': 'Revoke',
+    'settings.noInvites': 'No codes generated yet.',
+    'settings.confirmRevoke': 'Revoke this invitation code?',
+    'settings.users': 'Users',
+    'settings.role': 'Role',
+    'settings.unlock': 'Unlock',
+    'settings.lock': 'Lock',
+    'settings.resetPw': 'Reset password',
+    'settings.resetWarning': 'This deletes that account’s vault. An admin does not know the old password and cannot re-derive the key, so the entries would otherwise be permanently unreadable.',
+    'settings.resetConfirm': 'Reset and delete vault',
+    'settings.pwReset': 'Password reset. That account’s vault was deleted.',
+    'settings.confirmDeleteUser': 'Delete account "{name}"? That account’s vault is lost with it.',
+    'settings.servicesAdmin': 'Manage services',
+    'settings.serviceNew': 'Add service',
+    'settings.serviceEdit': 'Edit service',
+    'settings.category': 'Section',
+    'settings.noServices': 'No services configured yet.',
+    'settings.confirmDeleteService': 'Delete service "{name}"?',
+    'settings.audit': 'Login attempts',
+    'settings.auditSub': 'Shows whether anyone is knocking.',
+    'settings.when': 'When',
+    'settings.noAttempts': 'No entries.',
+    'settings.locked': 'Locked',
+    'settings.lockedUntil': 'Locked until {time}',
+    'settings.active': 'Active',
+
+    'status.active': 'Active',
+    'status.used': 'Redeemed',
+    'status.expired': 'Expired',
+    'status.success': 'Success',
+    'status.failed': 'Failed',
+
+    'pw.0': 'Very weak',
+    'pw.1': 'Weak',
+    'pw.2': 'Fair',
+    'pw.3': 'Good',
+    'pw.4': 'Strong',
+
+    'err.BAD_CREDENTIALS': 'Invalid credentials.',
+    'err.INPUT_MISSING': 'Please fill in both fields.',
+    'err.RATE_LIMITED': 'Too many attempts. Try again in {retryAfterMinutes} minutes.',
+    'err.ACCOUNT_LOCKED': 'Account locked after repeated failed logins. An admin can unlock it.',
+    'err.UNAUTHORIZED': 'Not signed in.',
+    'err.FORBIDDEN_ADMIN': 'You do not have permission for that.',
+    'err.CSRF_INVALID': 'Session expired. Please reload the page.',
+    'err.INVITE_INVALID': 'Invitation code invalid or expired.',
+    'err.INVITE_QUOTA': 'Invite limit reached. Try again later.',
+    'err.INVITE_EXPIRY_INVALID': 'Expiry must be between 1 and 90 days.',
+    'err.INVITE_NOT_FOUND': 'Code not found or already redeemed.',
+    'err.PW_MISSING': 'Please enter a password.',
+    'err.PW_TOO_SHORT': 'The password must be at least 12 characters.',
+    'err.PW_TOO_LONG': 'The password must be at most 72 bytes.',
+    'err.PW_CURRENT_WRONG': 'The current password is wrong.',
+    'err.USERNAME_MISSING': 'Please enter a username.',
+    'err.USERNAME_INVALID': 'Username: 3–32 characters, allowed are a–z, 0–9 and . _ -',
+    'err.USERNAME_TAKEN': 'That username is already taken.',
+    'err.SETUP_CLOSED': 'Setup is already complete.',
+    'err.DB_UNAVAILABLE': 'Database unavailable. Please try again later.',
+    'err.PROXY_UNAVAILABLE': 'Docker proxy unreachable — cluster data is missing.',
+    'err.VAULT_LOCKED': 'The vault is locked. Sign out and back in.',
+    'err.VAULT_TITLE_REQUIRED': 'A title is required.',
+    'err.VAULT_TITLE_TOO_LONG': 'The title is too long.',
+    'err.VAULT_USERNAME_TOO_LONG': 'The username is too long.',
+    'err.VAULT_PASSWORD_TOO_LONG': 'The password is too long.',
+    'err.VAULT_NOTES_TOO_LONG': 'The notes are too long.',
+    'err.VAULT_URL_TOO_LONG': 'The URL is too long.',
+    'err.ENTRY_NOT_FOUND': 'Entry not found.',
+    'err.SERVICE_NAME_REQUIRED': 'A name is required.',
+    'err.SERVICE_NAME_TOO_LONG': 'The name is too long.',
+    'err.SERVICE_DESC_TOO_LONG': 'The description is too long.',
+    'err.SERVICE_URL_TOO_LONG': 'The URL is too long.',
+    'err.SERVICE_ICON_TOO_LONG': 'The icon name is too long.',
+    'err.SERVICE_CATEGORY_INVALID': 'Unknown section.',
+    'err.SERVICE_STATUS_INVALID': 'Unknown status.',
+    'err.SERVICE_NOT_FOUND': 'Service not found.',
+    'err.USER_NOT_FOUND': 'User not found.',
+    'err.INVALID_ROLE': 'Unknown role.',
+    'err.INVALID_ID': 'Invalid id.',
+    'err.LAST_ADMIN_DEMOTE': 'The last admin cannot be demoted.',
+    'err.LAST_ADMIN_DELETE': 'The last admin cannot be deleted.',
+    'err.LAST_ADMIN_LOCK': 'The last admin cannot be locked.',
+    'err.SELF_DELETE': 'You cannot delete your own account.',
+    'err.SELF_LOCK': 'You cannot lock your own account.',
+    'err.THEME_REQUIRED': 'Please pick a colour.',
+    'err.THEME_INVALID': 'Invalid colour.',
+    'err.SETTING_UNKNOWN': 'Unknown setting.',
+    'err.SETTING_TOO_LONG': 'Value too long.',
+    'err.KEY_VALUE_REQUIRED': 'Key and value are required.',
+    'err.FIELDS_MISSING': 'Please fill in all fields.',
+    'err.BAD_JSON': 'Invalid request.',
+    'err.NOT_FOUND': 'Not found.',
+    'err.INTERNAL': 'Internal error. Please try again later.',
+    'err.NETWORK': 'Server unreachable. Check your connection.'
+  };
+
+  var DICTS = { de: de, en: en };
+  var STORAGE_KEY = 'zs-lang';
+
+  function detect() {
+    try {
+      var stored = localStorage.getItem(STORAGE_KEY);
+      if (stored && DICTS[stored]) return stored;
+    } catch (e) { /* storage blocked — fall through to the browser default */ }
+    var nav = (navigator.language || 'de').slice(0, 2).toLowerCase();
+    return DICTS[nav] ? nav : 'de';
+  }
+
+  var lang = detect();
+
+  function interpolate(text, vars) {
+    if (!vars) return text;
+    return text.replace(/\{(\w+)\}/g, function (whole, key) {
+      return Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key]) : whole;
+    });
+  }
+
+  function t(key, vars) {
+    var dict = DICTS[lang] || de;
+    var value = dict[key];
+    if (value === undefined) value = de[key];
+    // A missing key surfaces as the key itself rather than as empty space —
+    // silent blanks are how a broken translation ships unnoticed.
+    if (value === undefined) return key;
+    return interpolate(value, vars);
+  }
+
+  /* Resolve a server error response to a translated message.
+     Falls back to the server's English `error` text when the code has no key,
+     so a forgotten translation degrades to English rather than to nothing. */
+  function tError(data) {
+    if (!data) return t('err.INTERNAL');
+    var dict = DICTS[lang] || de;
+    var key = 'err.' + data.code;
+    if (data.code && (dict[key] !== undefined || de[key] !== undefined)) {
+      return t(key, data);
+    }
+    return data.error || t('err.INTERNAL');
+  }
+
+  var ATTRS = [
+    ['data-i18n', null],
+    ['data-i18n-ph', 'placeholder'],
+    ['data-i18n-title', 'title'],
+    ['data-i18n-aria', 'aria-label'],
+    ['data-i18n-alt', 'alt']
+  ];
+
+  function applyI18n(root) {
+    var scope = root || document;
+    ATTRS.forEach(function (pair) {
+      var attr = pair[0];
+      var target = pair[1];
+      scope.querySelectorAll('[' + attr + ']').forEach(function (el) {
+        var text = t(el.getAttribute(attr));
+        if (target === null) el.textContent = text;
+        else el.setAttribute(target, text);
+      });
+    });
+    document.documentElement.setAttribute('lang', lang);
+    document.querySelectorAll('.lang-toggle button').forEach(function (btn) {
+      btn.setAttribute('aria-pressed', String(btn.dataset.lang === lang));
+    });
+  }
+
+  function setLang(next) {
+    if (!DICTS[next] || next === lang) return;
+    lang = next;
+    try { localStorage.setItem(STORAGE_KEY, next); } catch (e) { /* storage blocked */ }
+    applyI18n();
+    // Markup built in JavaScript carries no data-i18n attributes, so applyI18n()
+    // cannot reach it. Views that render themselves listen for this and redraw.
+    window.dispatchEvent(new CustomEvent('languagechange:zs', { detail: { lang: next } }));
+  }
+
+  /* Development aid: the two dictionaries must stay at exact parity. */
+  function checkParity() {
+    var missing = [];
+    Object.keys(de).forEach(function (k) { if (!(k in en)) missing.push('en is missing ' + k); });
+    Object.keys(en).forEach(function (k) { if (!(k in de)) missing.push('de is missing ' + k); });
+    if (missing.length) console.warn('[i18n] dictionary parity broken:\n' + missing.join('\n'));
+    return missing;
+  }
+
+  window.I18N = {
+    t: t,
+    tError: tError,
+    applyI18n: applyI18n,
+    setLang: setLang,
+    checkParity: checkParity,
+    get lang() { return lang; }
+  };
+  window.t = t;
+
+  document.addEventListener('DOMContentLoaded', function () {
+    applyI18n();
+    document.addEventListener('click', function (event) {
+      var btn = event.target.closest('.lang-toggle button');
+      if (btn) setLang(btn.dataset.lang);
+    });
+  });
+})();

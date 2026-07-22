@@ -5,14 +5,57 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'static/**'
+      - 'templates/**'
       - 'Dockerfile'
-      - 'package.json'
-      - 'package-lock.json'
+      - 'requirements.txt'
       - '.github/workflows/dashboard.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'requirements.txt'
   workflow_dispatch:
 
 jobs:
+  # Cheap guardrails. There is no test suite yet, so this is what stands between
+  # a typo and a container that crash-loops on the cluster: the whole package has
+  # to import, and every template has to parse.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q src scripts
+
+      - name: Import the application
+        # DB_HOST points nowhere on purpose — importing must not need a database.
+        env:
+          DB_HOST: 127.0.0.1
+          SESSION_SECRET: ci-only-not-a-real-secret
+        run: python -c "from src.main import app; print(f'{len(app.routes)} routes registered')"
+
+      - name: Parse every Jinja template
+        run: |
+          python - <<'PY'
+          from jinja2 import Environment, FileSystemLoader
+          from pathlib import Path
+          env = Environment(loader=FileSystemLoader("templates"))
+          for path in sorted(Path("templates").glob("*.html")):
+              env.get_template(path.name)
+              print(f"ok  {path.name}")
+          PY
+
   build:
+    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,10 +76,12 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ghcr.io/zer0space-net/zer0space-dashboard:latest
+          tags: |
+            ghcr.io/zer0space-net/zer0space-dashboard:latest
+            ghcr.io/zer0space-net/zer0space-dashboard:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

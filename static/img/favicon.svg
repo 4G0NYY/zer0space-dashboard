@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Zer0space">
+  <!-- The 64x64 favicon from the brand sheet: rounded square, blue slashed
+       octagonal zero. Same glyph as templates/_macros.html, scaled to fit. -->
+  <rect width="64" height="64" rx="14" fill="#05080f"/>
+  <rect x="1" y="1" width="62" height="62" rx="13.5" fill="none" stroke="#2f7dfb" stroke-opacity=".35"/>
+  <g transform="translate(21 10) scale(0.5)" fill="#2f7dfb">
+    <path fill-rule="evenodd" d="M13 1 H31 L43 13 V51 L31 63 H13 L1 51 V13 Z
+                                 M17 12 H27 L34 19 V45 L27 52 H17 L10 45 V19 Z"/>
+    <path d="M13 46 L26 15 L33 15 L20 46 Z"/>
+  </g>
+</svg>

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Ersteinrichtung — Zer0space{% endblock %}
+{% block body_class %}page-auth page-setup{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/auth.css?v={{ asset_version }}">{% endblock %}
+
+{# Deliberately the plainest page in the project. It is seen exactly once, by
+   one person, and the only thing that matters is that they do not mistype the
+   password they are about to be locked out by. No artwork panel, no chibi. #}
+{% block chibi %}{% endblock %}
+
+{% block body %}
+<main class="auth auth-narrow" id="main">
+  <div class="auth-card auth-card-single glass">
+    <section class="auth-form">
+      <header class="auth-head">
+        {{ ui.wordmark_static() }}
+        {{ ui.lang_toggle() }}
+      </header>
+
+      <div class="auth-copy">
+        <span class="eyebrow" data-i18n="setup.eyebrow">Ersteinrichtung</span>
+        <h1 data-i18n="setup.title">Admin-Konto anlegen</h1>
+        <p class="muted" data-i18n="setup.sub">
+          Dieses Formular gibt es genau einmal. Sobald das erste Konto existiert,
+          ist /setup dauerhaft geschlossen und jedes weitere Konto entsteht über
+          einen Einladungscode.
+        </p>
+      </div>
+
+      <form id="setup-form" novalidate autocomplete="on">
+        <div class="alert alert-error" id="setup-error" role="alert" hidden></div>
+        <div class="alert alert-ok" id="setup-ok" role="status" hidden></div>
+
+        <div class="field">
+          <label for="username" data-i18n="common.username">Benutzername</label>
+          <input class="input" type="text" id="username" name="username"
+                 autocomplete="username" autocapitalize="none" spellcheck="false"
+                 minlength="3" maxlength="32" required autofocus
+                 data-i18n-ph="register.usernamePh" placeholder="3–32 Zeichen: a–z 0–9 . _ -">
+        </div>
+
+        <div class="field">
+          <label for="password" data-i18n="common.password">Passwort</label>
+          <div class="input-wrap">
+            <input class="input" type="password" id="password" name="password"
+                   autocomplete="new-password" minlength="12" required
+                   data-i18n-ph="common.min12" placeholder="Mindestens 12 Zeichen">
+            <button type="button" class="input-affix" data-toggle-password="password"
+                    data-i18n-aria="common.showPassword" aria-label="Passwort anzeigen">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7">
+                <path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12Z"/>
+                <circle cx="12" cy="12" r="2.9"/>
+              </svg>
+            </button>
+          </div>
+          <div class="pw-meter" id="pw-meter" data-score="0">
+            <div class="pw-bars"><span></span><span></span><span></span><span></span></div>
+            <div class="pw-label" id="pw-label"></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password2" data-i18n="register.confirm">Passwort bestätigen</label>
+          <input class="input" type="password" id="password2" name="password2"
+                 autocomplete="new-password" required
+                 data-i18n-ph="register.confirmPh" placeholder="Passwort wiederholen">
+        </div>
+
+        <div class="alert alert-info" data-i18n="setup.notice">
+          Das Passwort wird sofort mit bcrypt gehasht. Es gibt keinen Reset-Link
+          und keine Kopie — geht es verloren, hilft nur noch der Break-Glass-Weg
+          über scripts/unlock-user.py.
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit" id="setup-submit" data-i18n="setup.submit">
+          Admin-Konto erstellen
+        </button>
+      </form>
+    </section>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/password-strength.js?v={{ asset_version }}"></script>
+<script src="/static/js/setup.js?v={{ asset_version }}" defer></script>
+{% endblock %}

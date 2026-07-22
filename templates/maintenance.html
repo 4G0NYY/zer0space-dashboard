@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Wartung — Zer0space{% endblock %}
+{% block body_class %}page-status{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/errors.css?v={{ asset_version }}">{% endblock %}
+
+{% block sky %}
+  <div class="sky-photo sky-photo-wide" style="background-image:url('/static/img/may-terminal.jpg')" aria-hidden="true"></div>
+{% endblock %}
+
+{% block body %}
+<main class="status-page" id="main">
+  <div class="status-inner">
+    <header class="status-brand">{{ ui.wordmark_static() }}</header>
+
+    <span class="badge badge-warn status-badge">
+      <span class="dot dot-live"></span>
+      <span data-i18n="maint.badge">Wartung</span>
+    </span>
+
+    <h1 class="status-title status-title-lg">
+      <span class="status-kicker" data-i18n="maint.kicker">Wir verbessern gerade</span>
+      {{ ui.wordmark_static("wordmark-lg") }}
+    </h1>
+    <p class="status-sub muted" data-i18n="maint.sub">
+      Wartung läuft. Bitte versuche es später noch einmal.
+    </p>
+
+    <div class="status-actions">
+      <a class="btn btn-primary" href="{{ status_url }}" rel="noopener" target="_blank" data-i18n="maint.viewStatus">
+        Status ansehen
+      </a>
+      <a class="btn btn-ghost" href="/" data-i18n="maint.retry">Erneut versuchen</a>
+    </div>
+
+    {# "Coffee First" — the right amount of levity for a page that means
+       "somebody is working on it right now". #}
+    <img class="status-chibi" src="/static/img/chibi-03.jpg" alt="" width="260" height="348">
+  </div>
+</main>
+{% endblock %}
+
+{% block chibi %}{% endblock %}

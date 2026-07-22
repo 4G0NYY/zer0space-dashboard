@@ -1,14 +1,15 @@
 # Security
 
-How authentication, account creation and the vault work, and which of it you
-have to get right when operating the dashboard.
+How authentication, account creation and the vault work, and which of it you have
+to get right when operating the dashboard.
 
 The design target is that the dashboard can be the **only** access layer — that
-putting Cloudflare Access in front of it is defence in depth rather than the
-thing holding the door shut.
+putting Cloudflare Access in front of it is defence in depth rather than the thing
+holding the door shut.
 
-A review against that target is recorded in [Review log](#review-log) at the
-bottom, including what was found and fixed.
+> **v4 note.** The backend was rewritten from Node.js/Express to Python/FastAPI.
+> Every property described here survived the rewrite unchanged, including the
+> vault's on-disk format and the bcrypt cost. What changed is stated inline.
 
 ---
 
@@ -19,8 +20,8 @@ anyone but its owner ever seeing the password.
 
 ### 1. The first administrator — setup wizard
 
-While the `users` table is empty, `/setup` serves a wizard and `/login`
-redirects to it. The first admin is created there.
+While the `users` table is empty, `/setup` serves a wizard and `/login` redirects
+to it. The first admin is created there.
 
 Once that account exists, `/setup` redirects to `/login` and `POST /api/setup`
 answers `403 SETUP_CLOSED` — permanently. The check runs against the database on
@@ -31,31 +32,44 @@ The check and the insert share one transaction with `LOCK TABLE users IN
 EXCLUSIVE MODE`. Two people opening `/setup` simultaneously on a fresh install
 would otherwise both pass the empty-table test and both become admin.
 
-> There is no `DASHBOARD_USER` / `DASHBOARD_PASS` / `DASHBOARD_HASH` any more.
-> Those variables put the initial password into the Portainer database, into
+> There is no `DASHBOARD_USER` / `DASHBOARD_PASS` / `DASHBOARD_HASH`. Those
+> variables put the initial password into the Portainer database, into
 > `docker inspect` output and into shell history. The wizard exists so the
 > password's only trip is browser → bcrypt.
 
 ### 2. Everyone else — invitation codes
 
-An admin generates a code in **Settings → Invitations**. It is 32 hex characters
-from `crypto.randomBytes(16)`, single-use, and expires (default 7 days,
-configurable 1–90). The invitee opens `/register?code=…` and picks their own
-username and password.
+An admin mints a code; the invitee redeems it at `/register` and chooses their own
+password. No admin ever sets, sees or resets another user's password into a known
+value.
 
-The admin never sets another user's password. That is deliberate and has a
-consequence worth understanding: because the vault key is derived from the
-plaintext password (below), a password only its owner has ever typed is one
-whose vault the admin can never read.
+| Property | Value |
+|---|---|
+| Entropy | 128 bits (`secrets.token_hex(16)`, 32 hex characters) |
+| Expiry | 1–90 days, admin's choice, default 7 |
+| Uses | Exactly one — enforced with `SELECT … FOR UPDATE` |
+| Max role | `viewer` unless the admin explicitly grants `admin` |
+| Revocable | Yes, while unredeemed |
+| Quota | 20 per admin per hour |
 
-Codes can be revoked while unredeemed. Redeemed ones stay in the table as the
-record of how an account came to exist.
+**Codes are stored in the clear**, unlike a password hash. That is deliberate: the
+admin UI has to display the code so it can be copied and sent, which a hash makes
+impossible. The exposure is bounded by the code being single-use, expiring, and
+revocable — and by an unredeemed code granting nothing on its own.
 
-**Every failure mode of `POST /api/register` returns one identical response** —
-unknown code, expired code, already redeemed, username taken. Distinguishing
-them would turn the endpoint into an oracle: "already redeemed" confirms a code
-existed, and "username taken" confirms who has an account. The page cannot tell
-the user which it was either, because the server does not tell the page.
+**A redeemed code is never deleted.** It is the audit record of how an account came
+to exist. `DELETE /api/invite/:id` only removes unredeemed codes, and deleting a
+user detaches the invite rows rather than removing them.
+
+The redemption endpoint answers **one generic error** for every failure —
+non-existent code, expired code, already-redeemed code, and taken username all
+return `400 INVITE_INVALID` after the same padded delay. Each distinction would
+otherwise leak something: whether a code exists, whether it has been used, or
+whether a username is taken.
+
+The quota is not a brute-force defence — an admin is already trusted. It is a
+blast-radius limit: a hijacked admin session should not be able to produce an
+unbounded supply of working registration codes faster than anyone would notice.
 
 ---
 
@@ -63,315 +77,300 @@ the user which it was either, because the server does not tell the page.
 
 | Property | Value |
 |---|---|
-| Hash | bcrypt, cost 12 |
+| Algorithm | bcrypt, cost 12 |
 | Minimum | 12 characters |
-| Maximum | 72 bytes |
+| Maximum | 72 bytes (bcrypt ignores anything past 72) |
+| Where hashed | Server side, immediately on arrival |
+| Plaintext lifetime | One request. Never logged, never stored, never in an env var |
 
-The maximum is not arbitrary: **bcrypt hashes only the first 72 bytes** and
-silently ignores the rest, so a longer password is not a stronger one. Rejecting
-it is better than pretending.
+The maximum is enforced rather than left implicit: without it, a user could set a
+100-character password and believe the last 28 characters were doing something.
 
-The strength meter on the setup and registration pages scores length and
-character diversity. It is a nudge, not a control — it runs on the client, and
-it cannot tell that `Passwort123!` is terrible. The 12-character server-side
-minimum is the actual floor.
-
-Hashing is always `await bcrypt.hash(...)`, never `hashSync`. A cost-12 round
-takes roughly 250 ms, and the synchronous version blocks the event loop for all
-of it — on a public login endpoint that is a denial of service anyone can
-trigger by holding down the return key.
+**Hashing always runs off the event loop.** `auth.hash_password` and
+`auth.verify_password` dispatch to a worker thread via `anyio.to_thread.run_sync`.
+A cost-12 round costs about 250 ms of pure CPU; running it inline on a
+single-worker ASGI server means every other in-flight request stalls for that long,
+which is a denial of service anyone can trigger by holding the sign-in button down.
+The same applies to the 600 000-iteration PBKDF2 vault derivation.
 
 ---
 
-## Login defences
+## Login
+
+### Uniform failure
+
+Every rejected sign-in returns the same body — `401 BAD_CREDENTIALS`, "Invalid
+credentials" — after at least 400 ms, whether the username exists or not.
+
+Two mechanisms make that true rather than aspirational:
+
+- **A dummy hash.** When the username does not exist, the password is verified
+  against a bcrypt hash generated at import from random bytes. The no-such-user
+  path therefore costs exactly one bcrypt round, like every other path.
+- **A timing floor.** `auth.pad_timing` holds the response until 400 ms have
+  elapsed, so a fast rejection (rate limited, missing input) cannot be told apart
+  from a slow one.
+
+### The single exception
+
+A locked account tells the truth — `423 ACCOUNT_LOCKED` — but **only to a caller
+who already supplied the correct password**. Without that, a user whose account is
+locked has no way to understand why a password they know is correct keeps failing.
+Someone who does not know the password learns nothing: they get the generic answer.
 
 ### Rate limiting
 
-Backed by the `login_attempts` table, **not** by an in-memory map. That is the
-whole reason the table exists: with process-local counters, restarting the
-container reset every lockout, so anyone who could provoke a restart — or who
-simply waited for a deploy — got a clean slate.
+Backed by the `login_attempts` table, **not** by an in-process dictionary. Process-
+local counters were reset by every container restart, so an attacker who could
+provoke a restart — or who simply waited for a deploy — got a clean slate.
 
 | Scope | Threshold | Window | Block |
 |---|---|---|---|
-| Per IP | 10 failed logins | 15 min | 30 min |
-| Per username | 5 failed logins | 10 min | 15 min |
-| Registration, per IP | 3 attempts | 60 min | 60 min |
-| Invites per admin | 20 created | 60 min | until the hour rolls |
+| Per IP (login) | 10 failures | 15 min | 30 min |
+| Per username (login) | 5 failures | 10 min | 15 min |
+| Per IP (register) | 3 attempts | 60 min | 60 min |
 
-The invite quota is not a brute-force defence — an admin is already trusted —
-but a blast radius limit: a hijacked admin session should not be able to mint an
-unbounded supply of working registration codes faster than anyone would notice.
+The per-username limit is tighter than the per-IP limit on purpose: a distributed
+guess against one account is exactly the attack the per-IP limit cannot see.
 
-The per-username limit is tighter because a distributed guessing attack against
-one account is exactly what the per-IP limit cannot see.
+Attempts rejected *because of* a block are deliberately not logged, so a blocked
+client cannot extend its own block indefinitely by continuing to hammer the
+endpoint.
 
-Attempts rejected *because of* a block are not written to the table. Otherwise a
-blocked client could keep its own block alive forever by continuing to hammer
-the endpoint.
-
-Invalid invite codes count against the registration limit, so the code space
-cannot be searched.
-
-All values live in `LIMITS` at the top of `src/auth.js`.
+The client IP comes from `cf-connecting-ip` (then `x-forwarded-for`) when
+`TRUST_PROXY` is on, which is correct behind the Cloudflare Tunnel — every request
+arrives from the tunnel container otherwise. **Set `TRUST_PROXY=false` if the
+dashboard is ever exposed directly**, where that header is attacker-controlled and
+trusting it would let anyone forge a fresh address per attempt.
 
 ### Account lockout
 
-Ten consecutive failed logins lock the account for 30 minutes. The counter is
-`users.failed_attempts` and resets on any success. Unlike the sliding windows
-above, it survives an attacker pacing their attempts to stay under the rate
-limit.
+Ten consecutive failures lock the account for 30 minutes. This is a per-account
+counter (`users.failed_attempts`), independent of the sliding windows above, so it
+survives an attacker pacing their attempts to stay under the rate limit.
 
-**The lock expires on its own.** A permanent lock releasable only by an admin
-sounds stricter, and is worse: the admin username is guessable, so anyone who
-can reach `/login` could lock the only admin out for good — and with `/setup`
-sealed, there would be no way back in. A brute-force defence that hands an
-attacker a permanent denial of service is not a defence.
+**The automatic lock expires on its own.** A permanent lock releasable only by an
+admin reads as the safer option, but it is not: the admin username is guessable, so
+anyone able to reach `/login` could lock the only admin out for good — and with
+`/setup` sealed, there would be no way back in.
 
-Three ways out, in order of convenience:
+When an indefinite lock *is* what you want, that is a separate, explicit mechanism:
+`users.locked`, a boolean an admin sets via `POST /api/users/:id/lock`. It never
+expires, and it cannot be applied to the last admin or to your own account.
 
-1. Wait 30 minutes.
-2. An admin clears it in **Settings → Users → Unlock**.
-3. Break-glass, when every admin is locked at once:
-   ```bash
-   docker exec -it <dashboard-container> npm run unlock-user -- --list
-   docker exec -it <dashboard-container> npm run unlock-user -- <username>
-   ```
-   The script can *only* unlock. It cannot create an account or change a
-   password, so having it is not equivalent to having the dashboard.
+Break-glass, if every admin is locked at once:
 
-### Timing equalisation
+```bash
+docker exec -it <dashboard-container> python scripts/unlock-user.py --list
+docker exec -it <dashboard-container> python scripts/unlock-user.py --user siro
+```
 
-`/api/login` takes at least 400 ms whatever happens, and runs a bcrypt
-comparison against a dummy hash when the username does not exist. Without both,
-a missing username returns in about a millisecond while a real one spends a full
-bcrypt round — which is a username enumeration oracle measurable over the
-network.
-
-The one deliberate exception: a caller who supplies the **correct** password for
-a locked account is told the account is locked and when it frees up. They have
-already proven they own it, and without that a locked-out user has no way to
-understand why a correct password keeps failing.
-
-### Audit trail
-
-Every attempt lands in `login_attempts` (timestamp, IP, username, success,
-kind). Admins read it at `GET /api/login-attempts`. Rows older than 30 days are
-pruned daily.
-
-**No password, in any form, is ever written there.** The table has no column
-that could hold one — keep it that way.
+That script deliberately **cannot set a password**. Restoring access to a locked
+account is a different operation from taking one over, and a tool that could do
+both would be the most dangerous file in the repository.
 
 ---
 
 ## Sessions
 
-- Store: the default **in-memory** store, deliberately. `req.session` holds the
-  derived vault key, and a database-backed store would write that key to
-  Postgres and break the vault threat model entirely. Consequence: the service
-  must stay at `replicas: 1`, and a restart signs everyone out.
-- Cookie: `httpOnly`, `sameSite: 'strict'`, `secure` when `FORCE_HTTPS=true`,
-  `maxAge` **24 h**.
-- The session id is regenerated on login (`req.session.regenerate`). Without it,
-  an attacker who can plant a cookie before login still holds a valid session
-  after it — session fixation.
+| Property | Value |
+|---|---|
+| Storage | Server-side, in process memory |
+| Cookie | `zs.sid`, carries only a signed session id |
+| Flags | `httpOnly`, `sameSite=strict`, `secure` when `FORCE_HTTPS=true` |
+| Lifetime | 24 hours |
+| On login | Session id regenerated (fixation defence) |
 
-`sameSite: 'strict'` is load-bearing here, not cosmetic: it is what covers the
-three unauthenticated POST endpoints that cannot carry a CSRF token.
+**The session holds the derived vault key.** Everything above follows from that:
 
-The 24-hour lifetime is a vault decision. The session holds the key, so its
-lifetime is how long a stolen session cookie can decrypt vault entries.
+- Starlette's built-in `SessionMiddleware` serialises the session *into the
+  cookie*. Using it would hand the vault key to the browser. It is not used.
+- A PostgreSQL-backed session store would write the key to the database, which is
+  precisely what the vault design exists to prevent.
+- 24 hours, not a week: the session lifetime is the window in which a stolen
+  session cookie can decrypt the vault.
+
+The accepted consequence is that sessions are per-process. **`replicas: 1`** is a
+correctness requirement, not a resource decision, and a restart signs everyone out.
+
+The session secret resolves as: Swarm secret file → `SESSION_SECRET` env var →
+a value stored in the `settings` table → freshly generated and stored there. The
+last step means sessions survive a restart even on a deployment that never
+configured a secret. If PostgreSQL is unreachable at boot, an ephemeral secret is
+used and that fact is logged loudly.
 
 ---
 
 ## CSRF
 
-Double-submit: a token generated per session, stored server-side, echoed by the
-client in `X-CSRF-Token`. It is never placed in a cookie, so a cross-site
-request cannot read it.
+Double-submit. The token lives in the server-side session and must be echoed in the
+`X-CSRF-Token` header. It is never placed in a cookie, so a cross-site request
+cannot read it.
 
-Applied to **every** state-changing request behind `requireAuth` — not just the
-vault, which is where it started. `src/public/app.js` wraps `window.fetch` once
-to attach the header to every same-origin non-GET request, rather than relying
-on twenty call sites and every future one remembering.
+`CsrfMiddleware` covers **every** state-changing request that carries a session —
+not just the vault. `static/js/api.js` attaches the header once, so a new POST
+anywhere in the app is automatically covered.
 
-Exempt: `/api/login`, `/api/setup`, `/api/register`. There is no session to hold
-a token yet, and minting one for every anonymous visitor would let an
-unauthenticated client fill the in-memory session store. They are covered by
-`sameSite: 'strict'` plus their rate limits.
+Three endpoints are exempt: `/api/login`, `/api/setup`, `/api/register`. They run
+before a session exists, and minting one for every anonymous visitor would let an
+unauthenticated client fill the in-memory session store. They are covered instead
+by `sameSite=strict` on the session cookie plus their own rate limits.
+
+---
+
+## The vault
+
+Per-user encrypted credential storage. **The threat model is a stolen database
+dump**, and the design answers it directly: a dump alone is not enough.
+
+| Property | Value |
+|---|---|
+| Cipher | AES-256-GCM |
+| Key derivation | PBKDF2-HMAC-SHA256, 600 000 iterations |
+| Salt | Per user, random 16 bytes, `users.vault_salt` |
+| Key location | Server-side session only |
+| Stored format | `base64(iv).base64(tag).base64(ciphertext)` |
+
+The key is derived from the user's **plaintext password at login** — the one moment
+the server holds it — and lives only in the session. It is never written to the
+database and never sent to the client. An attacker with a full dump of
+`vault_entries` and `users` has ciphertext, salts and bcrypt hashes, and no key.
+
+> The wire format is byte-identical to the Node.js implementation's, which is why
+> the v4 rewrite needed no data migration. If you change `src/vault.py`, that
+> compatibility is the invariant to preserve.
+
+Two consequences follow, both of which look like bugs until you know why:
+
+**Changing your own password re-encrypts the vault.** It is the one request that
+holds both the old and the new plaintext, so `vault.reencrypt_all` can decrypt with
+the old key and re-encrypt with the new one. The salt is rotated too — a fresh key,
+not a re-derivation. The re-encryption and the password update commit in **one
+transaction**: a crash between them would leave entries encrypted with the old key
+while the salt already pointed at the new one, which is permanently undecryptable.
+
+**An admin-forced password reset wipes that user's vault.** The admin never has the
+old plaintext, so the old key cannot be re-derived and the entries could never be
+decrypted again. Deleting them is more honest than leaving dead ciphertext behind
+that the UI would have to keep apologising for. `PUT /api/users/:id/password`
+returns `vaultWiped: true` so the UI can say so.
+
+If a session predates the vault feature or survives a reset, the API answers
+`409 VAULT_LOCKED` — "sign out and back in" — rather than crashing or silently
+showing nothing.
+
+---
+
+## HTTP hardening
+
+Set by `SecurityHeadersMiddleware` on every response:
+
+| Header | Value |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'`, `script-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `same-origin` |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Permissions-Policy` | geolocation, microphone, camera all denied |
+| `Strict-Transport-Security` | only when `FORCE_HTTPS=true` |
+
+**`script-src` has no `'unsafe-inline'`.** That is why there is not a single inline
+`<script>` in `templates/` — the theme bootstrap lives in `static/js/boot.js`
+specifically so the policy can stay strict. Injected inline scripts are blocked.
+
+`style-src` does allow `'unsafe-inline'`, because metric bar widths are set as
+inline `style` attributes on generated markup. That is a knowing trade: an
+attacker who can inject markup can restyle the page, but cannot execute script.
+
+The CSP does not stop `<img onerror=…>`, so **everything that reaches `innerHTML`
+goes through `ZS_UI.esc()`** and every `href` through `ZS_UI.safeUrl()`, which
+accepts only `http:`, `https:` and site-relative paths. Service names, hostnames
+and vault titles are all user-controlled.
+
+**HSTS is conditional on purpose.** Once a browser stores an HSTS entry it upgrades
+every later request to `https://`. Sending it while the dashboard is also reachable
+at `http://node:8080` on the LAN breaks that access until the entry expires.
 
 ---
 
 ## Secrets
 
-Read from `/run/secrets/<name>` first, environment variable second:
+Nothing in this repository contains a credential, and nothing should.
 
-| Secret | Env fallback | Purpose |
+| Secret | Where it lives | Fallback |
 |---|---|---|
-| `db_password` | `DB_PASS` | PostgreSQL password |
-| `session_secret` | `SESSION_SECRET` | Session signing key |
+| Database password | `db_password` Swarm secret → `/run/secrets/db_password` | `DB_PASS` env var (development only) |
+| Session signing key | `session_secret` Swarm secret | `SESSION_SECRET` env var, then the `settings` table |
 
-Create them once on a manager node:
+Created once on a manager node:
 
 ```bash
-printf '%s' 'YOUR-DB-PASSWORD' | docker secret create db_password -
-openssl rand -hex 32 | tr -d '\n' | docker secret create session_secret -
+printf '%s' 'THE-DB-PASSWORD' | docker secret create db_password -
+openssl rand -hex 32 | tr -d '\n'  | docker secret create session_secret -
 ```
 
-Both are `external: true` in `docker-compose.yml` — a secret declared inline
-would sit in the repository.
+Docker secrets are immutable, so rotating one means creating a new secret under a
+new name and updating the reference. Rotating `session_secret` invalidates every
+active session — and since the vault key lives in the session, every vault
+re-locks until its owner signs in again.
 
-Docker secrets are immutable: rotating one means creating it under a new name
-and updating the reference. Rotating `session_secret` invalidates every active
-session, so everyone signs in again — and the vault re-locks until they do.
-
-If `session_secret` is absent entirely, the server generates one and stores it in
-the `settings` table so it survives restarts. That is the development path;
-production should have the secret.
+The resolution order is **file first, environment second**, never the reverse.
+That is what keeps the compose file free of credentials.
 
 ---
 
-## Vault (unchanged)
+## The Docker socket
 
-Not touched by the auth rework, but it constrains everything above.
+The dashboard never holds a Docker socket. It reads the Swarm through
+`tecnativa/docker-socket-proxy` with only three endpoint groups enabled — `NODES`,
+`SERVICES`, `TASKS` — and `POST=0`. Containers, images, volumes, networks, `exec`
+and every write path are off.
 
-The per-user vault key is derived at login from the **plaintext** password
-(PBKDF2-HMAC-SHA256, 600k iterations, per-user salt in `users.vault_salt`) and
-lives only in the server-side session. It is never written to the database and
-never sent to the client. A stolen database dump alone cannot decrypt vault
-entries. Entries are AES-256-GCM.
-
-Two consequences that are easy to break by accident:
-
-- A user changing their own password must **re-encrypt** their vault entries with
-  the new key. That is the one request holding both the old and new plaintext.
-- An admin-forced password reset **cannot** re-encrypt — the admin never has the
-  old plaintext — so it deliberately wipes that user's vault rather than leaving
-  rows that can never be decrypted. Intentional, not a bug.
+The proxy is pinned to a manager node, because only managers answer those
+endpoints.
 
 ---
 
-## Headers and transport
+## Repository audit
 
-`helmet` with a CSP that has **no `'unsafe-inline'` in `script-src`**. Inline
-scripts are blocked on purpose; that is why the login starfield lives in
-`starfield.js` rather than in a `<script>` block. `style-src` does allow inline
-styles, which dynamic metric-bar widths need.
-
-`FORCE_HTTPS=true` enables HSTS and `upgrade-insecure-requests`, and implies
-`COOKIE_SECURE`. It defaults to false so plain HTTP on the LAN keeps working;
-turn it on when the dashboard is reachable through the tunnel.
-
-`TRUST_PROXY` (default `true`) makes per-IP rate limiting read
-`cf-connecting-ip` / `x-forwarded-for`, which is correct behind the Cloudflare
-Tunnel where every request otherwise appears to come from the tunnel container.
-**Set it to `false` if the dashboard is ever exposed directly** — there the
-header is attacker-controlled, and trusting it lets anyone forge a fresh address
-per attempt and sidestep the per-IP limits entirely.
-
----
-
-## Invariants
-
-Things that are load-bearing. Breaking one is a security regression, not a
-refactor.
-
-- The last admin cannot be deleted or demoted; users cannot delete themselves.
-- All SQL is parameterised. No string concatenation.
-- Every route after `app.use(requireAuth)` is authenticated; admin routes take
-  `requireAdmin` explicitly.
-- `/setup` is reachable only while `users` is empty.
-- `/api/register` returns one generic failure for every invite problem.
-- No password is ever logged, in any form.
-- No password ever travels in an environment variable in production.
-- `GATED_PAGES` in `server.js` blocks direct access to `index.html`,
-  `setup.html`, `register.html` and `login.html`. Without it `express.static`
-  serves those files by name and walks straight around the route guards.
-- `PUBLIC_SETTINGS` in `server.js` is an **allowlist**, on both the read and the
-  write side of `/api/settings`. The settings table also holds `session_secret`.
-
----
-
-## Review log
-
-Full pass over the checklist below, 21 July 2026. Verified by 59 automated
-checks against an in-memory stand-in for Postgres, plus a separate timing
-measurement, plus a click-through of the invite and registration flows.
-
-### Findings and fixes
-
-**1. `/api/settings` leaked the session signing key — critical, fixed.**
-
-`GET /api/settings` returned every row of the `settings` table, and the route
-sits behind `requireAuth` only, not `requireAdmin`. `getSessionSecret()` stores
-the session signing key in that same table. Any authenticated user — including a
-`viewer` — could therefore read the secret used to sign session cookies, forge a
-cookie for any account including an admin, and keep that access across password
-changes.
-
-Fixed with an allowlist (`theme`, `bg_mode`, `bg_file`) applied to both reading
-and writing, so a future internal key cannot become world-readable by omission.
-The write side previously accepted any key, which also let an admin overwrite
-`session_secret` through the settings UI. Regression tests cover both.
-
-This predates the auth rework; it was not introduced by it.
-
-**2. Schema bootstrap was all-or-nothing — fixed.**
-
-`initSchema()` ran the whole schema as one multi-statement query. node-postgres
-wraps those in an implicit transaction, so a single failing statement rolled back
-every other statement in the batch. On a database that already had the older
-tables the failure was silent: everything that existed kept working, and the only
-symptom was one feature returning 500 — which is exactly how "creating an invite
-does nothing" presents.
-
-Statements now run individually, a failure names the statement, and the required
-tables are verified afterwards with a loud log line if any is missing.
-`GET /api/health/schema` (admin) reports the same thing over HTTP, so this is
-answerable without shell access to Postgres.
-
-**3. `/api/user/theme` accepted unbounded input — fixed.** Any string was written
-straight into `users.theme`. Now restricted to a preset name or a hex colour.
-
-**4. `auth.js` interpolated a column name into SQL — hardened.** The value came
-from an internal constant at both call sites, never from a request, so it was not
-exploitable; it is now checked against an allowlist so it stays that way.
-
-**5. Invite creation had no rate limit — fixed.** See the quota row above.
-
-### Checklist
-
-| Item | State |
-|---|---|
-| Login rate limiting, per IP and per username | Both active, verified |
-| Registration rate limiting, per IP | Active; invalid codes count |
-| Invite API rate limiting | **Added in this pass** (20/hour/admin) |
-| Account lockout after 10 failures | Active, expires after 30 min, admin can clear |
-| CSRF on all POST/PUT/DELETE | Active on everything behind `requireAuth` |
-| Password minimum 12 characters | Enforced server-side, meter in the UI |
-| Session `httpOnly` / `sameSite=strict` / `secure` / 24 h | All verified on the wire |
-| Constant-time login response | Failure paths within 8 ms of each other, both ≥ 400 ms |
-| No stack traces or internal errors to the client | Error handler returns a generic body |
-| SQL parameterised throughout | No concatenation; one interpolation, now allowlisted |
-| Helmet CSP | Unchanged and still strict; `script-src` has no `'unsafe-inline'` |
-| Input validation on writing routes | **Two gaps found and fixed** (settings, theme) |
-| Invite codes cryptographically random | `crypto.randomBytes(16)`, 32 hex chars, single-use |
-| `/setup` sealed once an admin exists | Verified, including the direct `.html` path |
-
-### Repository audit
-
-`zer0space-net/zer0space-dashboard` is public. The whole history (7 commits) was
-searched for credentials.
+`zer0space-net/zer0space-dashboard` is public, so the whole history is re-scanned
+whenever something substantial changes. Last run: **at the v4 rewrite**, across all
+commits, for bcrypt hashes, GitHub/AWS/Slack/Discord tokens, JWTs, private keys,
+Cloudflare tunnel tokens and connection strings carrying a password.
 
 **No secrets found.** No `.env`, `.key`, `.pem` or `.secret` file has ever been
-committed; no bcrypt hashes, JWTs, GitHub tokens or 64-character hex strings
-appear in any diff. The only password-shaped string is `devpass`, in a README
-example for a throwaway local Postgres container.
+committed. The only password-shaped strings in the tree are `devpass` (a README
+example for a throwaway local Postgres container) and `CHANGE-ME` in
+`.env.example`. Everything else the scan flags is an i18n dictionary key called
+`login.password`.
 
-**Private IPs are present** and are the one thing worth a decision:
+**Private IPs are present** and remain the one thing worth a decision:
 `192.168.0.15`, `192.168.0.16`, `192.168.0.17`, in both the current files and the
 history. These are RFC1918 addresses — not routable from the internet, so they
-cannot be connected to — but they do disclose internal topology, and pair with
-this repository's documentation of what runs on each host. No action was taken:
-removing them means rewriting history on a public repository, which is a call for
-the repository owner, not an automated cleanup.
+cannot be connected to — but they do disclose internal topology, and they pair with
+this repository's documentation of what runs on each host.
+
+No action taken, same as last time: removing them means rewriting history on a
+public repository, which is the repository owner's call rather than an automated
+cleanup. If that call is ever made, note that `docker-compose.yml` already reads
+every one of them from an environment variable with the address only as a
+`${VAR:-default}`, so the current files could be scrubbed without changing any
+behaviour.
+
+## What this does not defend against
+
+Stated plainly, because a security document that only lists wins is not useful:
+
+- **A compromised host.** Root on the node running the dashboard reads the session
+  store out of process memory, vault keys included.
+- **A malicious admin.** An admin can mint invite codes, reset passwords and read
+  the audit log. That is the role, not a flaw.
+- **Offline brute force of a weak password.** A stolen `users` dump plus a
+  12-character password that appears in a wordlist is recoverable given enough
+  GPU-hours; bcrypt cost 12 buys time, not immunity.
+- **Session theft by XSS.** The CSP and the escaping make this hard, not
+  impossible. `httpOnly` stops the cookie being read, but a script running on the
+  page can still act as the user.
+- **Traffic analysis.** Nothing here hides *that* you use the dashboard, only what
+  you do in it.

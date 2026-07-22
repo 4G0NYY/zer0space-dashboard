@@ -1,0 +1,112 @@
+/* ==========================================================================
+   404, maintenance, loading — one centred column, one piece of artwork.
+   ========================================================================== */
+
+.status-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(24px, 5vw, 56px);
+}
+
+.status-inner {
+  position: relative;
+  width: min(100%, 640px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  animation: rise 0.5s var(--ease) both;
+}
+
+.status-inner-tight { gap: 20px; }
+
+.status-brand { margin-bottom: 12px; }
+.status-badge { margin-bottom: 4px; }
+
+/* The 404 itself. Ultra-light and enormous, the way the brand sheet draws it —
+   it reads as a graphic element rather than as an error message. */
+.status-code {
+  font-size: clamp(5.5rem, 20vw, 10rem);
+  font-weight: 200;
+  line-height: 0.86;
+  letter-spacing: -0.045em;
+  margin: 0;
+  background: linear-gradient(180deg, var(--text) 18%, color-mix(in srgb, var(--accent) 62%, var(--text-faint)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 24px 70px var(--accent-glow);
+}
+
+.status-title { font-size: clamp(1.5rem, 4.4vw, 2.1rem); }
+.status-title-lg { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.status-kicker { font-size: clamp(1rem, 2.4vw, 1.25rem); font-weight: 420; color: var(--text-dim); }
+
+.status-sub { max-width: 42ch; font-size: 0.96rem; }
+
+.status-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 8px; }
+.status-actions .btn { padding: 11px 22px; }
+
+/* --- Chibi ---------------------------------------------------------------- */
+
+.status-chibi {
+  width: clamp(120px, 22vw, 168px);
+  height: auto;
+  margin-top: 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  animation: drift 6s var(--ease) infinite alternate;
+}
+
+/* --- Loading -------------------------------------------------------------- */
+
+.loading-mark { display: flex; align-items: center; gap: 14px; }
+
+.loading-text { color: var(--text-dim); font-size: 0.98rem; margin-top: 6px; }
+.loading-pct { font-size: 0.78rem; letter-spacing: 0.08em; }
+
+.progress {
+  width: min(100%, 360px);
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(120, 160, 225, 0.14);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
+  box-shadow: 0 0 18px -2px var(--accent-glow);
+  transition: width 0.45s var(--ease);
+}
+
+/* Indeterminate variant, used by the dashboard overlay where there is no real
+   percentage to report — a fake number that jumps to 100 is worse than none. */
+.progress-indeterminate .progress-bar {
+  width: 38%;
+  animation: sweep 1.5s var(--ease) infinite;
+}
+@keyframes sweep {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(300%); }
+}
+
+/* --- Backdrop tweak ------------------------------------------------------- */
+/* These pages have no side panel to balance against, so the artwork sits behind
+   the whole viewport instead of being masked toward one edge. */
+
+.sky-photo-wide {
+  opacity: 0.34;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 40%, #000 10%, transparent 78%);
+  mask-image: radial-gradient(120% 90% at 50% 40%, #000 10%, transparent 78%);
+}
+
+@media (max-width: 620px) {
+  .status-chibi { width: 118px; }
+  .sky-photo-wide { opacity: 0.2; }
+}

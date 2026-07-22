@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Laden — Zer0space{% endblock %}
+{% block body_class %}page-status page-loading{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/errors.css?v={{ asset_version }}">{% endblock %}
+
+{#
+  A standalone loading screen. The dashboard has its own inline overlay (the
+  same markup, see dashboard.html), so this route exists for the cases where
+  there is no app to overlay yet: a cold start behind the tunnel, or a link
+  someone wants to point at while a deploy finishes.
+#}
+
+{% block sky %}
+  <div class="sky-photo sky-photo-wide" style="background-image:url('/static/img/may-city.jpg')" aria-hidden="true"></div>
+{% endblock %}
+
+{% block body %}
+<main class="status-page" id="main">
+  <div class="status-inner status-inner-tight">
+    <div class="loading-mark">
+      {{ ui.brand_mark() }}
+      {{ ui.wordmark_static("wordmark-lg") }}
+    </div>
+    {{ ui.tagline() }}
+
+    <p class="loading-text" id="loading-text" data-i18n="loading.text">Lade dein Universum …</p>
+
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+         id="loading-progress" data-i18n-aria="loading.text" aria-label="Lade dein Universum">
+      <div class="progress-bar" id="loading-bar"></div>
+    </div>
+    <p class="loading-pct mono faint" id="loading-pct">0%</p>
+  </div>
+</main>
+{% endblock %}
+
+{% block chibi %}{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/loading.js?v={{ asset_version }}" defer></script>
+{% endblock %}

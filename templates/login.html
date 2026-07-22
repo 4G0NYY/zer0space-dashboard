@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Anmelden — Zer0space{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/auth.css?v={{ asset_version }}">{% endblock %}
+
+{% block body %}
+<main class="auth" id="main">
+  <div class="auth-card glass">
+
+    <section class="auth-form">
+      <header class="auth-head">
+        {{ ui.wordmark("/") }}
+        {{ ui.lang_toggle() }}
+      </header>
+
+      <div class="auth-copy">
+        <h1 data-i18n="login.title">Willkommen zurück</h1>
+        <p class="muted" data-i18n="login.sub">Melde dich an, um zu deinem Dashboard zu gelangen.</p>
+      </div>
+
+      <form id="login-form" novalidate autocomplete="on">
+        <div class="alert alert-error" id="login-error" role="alert" hidden></div>
+
+        <div class="field">
+          <label for="username" data-i18n="common.username">Benutzername</label>
+          <input class="input" type="text" id="username" name="username"
+                 autocomplete="username" autocapitalize="none" spellcheck="false"
+                 required autofocus data-i18n-ph="login.usernamePh" placeholder="Benutzername">
+        </div>
+
+        <div class="field">
+          <label for="password" data-i18n="common.password">Passwort</label>
+          <div class="input-wrap">
+            <input class="input" type="password" id="password" name="password"
+                   autocomplete="current-password" required
+                   data-i18n-ph="login.passwordPh" placeholder="Passwort">
+            <button type="button" class="input-affix" data-toggle-password="password"
+                    data-i18n-aria="common.showPassword" aria-label="Passwort anzeigen">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7">
+                <path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12Z"/>
+                <circle cx="12" cy="12" r="2.9"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-row">
+          <label class="check">
+            <input type="checkbox" id="remember" name="remember">
+            <span data-i18n="login.remember">Angemeldet bleiben</span>
+          </label>
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit" id="login-submit" data-i18n="login.submit">
+          Anmelden
+        </button>
+      </form>
+
+      <div class="auth-divider"><span data-i18n="common.or">oder</span></div>
+
+      <a class="btn btn-ghost btn-block" href="/register" data-i18n="login.registerCta">
+        Mit Einladungscode registrieren
+      </a>
+
+      <footer class="auth-foot">
+        <span class="faint" data-i18n="login.noAccount">Noch kein Konto?</span>
+        <a href="/register" data-i18n="login.askAdmin">Frag einen Admin nach einem Code</a>
+      </footer>
+    </section>
+
+    {# Same split-card composition as the brand sheet's login mockup: form on
+       the left, May on the right, one accent-lit edge between them. #}
+    <aside class="auth-art" aria-hidden="true">
+      <img src="/static/img/may-window.jpg" alt="" width="1600" height="900" loading="eager" fetchpriority="high">
+      <div class="auth-art-copy">
+        {{ ui.wordmark_static() }}
+        {{ ui.tagline() }}
+        <p class="auth-quote" data-i18n="login.quote">
+          „Neun Maschinen, ein ehrliches Log, eine Tür, die sich nur nach außen öffnet."
+        </p>
+      </div>
+    </aside>
+
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/login.js?v={{ asset_version }}" defer></script>
+{% endblock %}

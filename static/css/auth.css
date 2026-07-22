@@ -1,0 +1,154 @@
+/* ==========================================================================
+   Login, register, setup — one split card on a starfield.
+   ========================================================================== */
+
+.auth {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 4vw, 44px);
+}
+
+.auth-card {
+  width: min(100%, 1000px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  overflow: hidden;
+  animation: rise 0.45s var(--ease) both;
+}
+
+.auth-card-single { grid-template-columns: 1fr; max-width: 480px; }
+.auth-narrow .auth-card { max-width: 480px; }
+
+/* --- Form side ----------------------------------------------------------- */
+
+.auth-form {
+  padding: clamp(26px, 4vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+
+.auth-head { display: flex; align-items: center; gap: 14px; }
+.auth-head .lang-toggle { margin-left: auto; }
+
+.auth-copy { display: flex; flex-direction: column; gap: 8px; }
+.auth-copy h1 { font-size: clamp(1.45rem, 3.2vw, 1.85rem); }
+.auth-copy p { font-size: 0.9rem; line-height: 1.6; }
+
+.auth-form form { display: flex; flex-direction: column; gap: 16px; }
+
+.auth-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+.auth-form .btn-primary { margin-top: 4px; padding: 12px 18px; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.auth-divider::before, .auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.85rem;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 18px;
+}
+
+/* --- Artwork side -------------------------------------------------------- */
+
+.auth-art {
+  position: relative;
+  min-height: 420px;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.auth-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 62% center;
+  z-index: -2;
+}
+
+/* Two overlays doing different jobs: the gradient keeps the caption legible over
+   whatever part of the illustration happens to be behind it, and the accent
+   wash ties the photo to the current theme colour. */
+.auth-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(to top, rgba(3, 6, 13, 0.94) 4%, rgba(3, 6, 13, 0.32) 46%, transparent 78%),
+    linear-gradient(to right, rgba(3, 6, 13, 0.7), transparent 40%);
+}
+.auth-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(90% 70% at 80% 8%, var(--accent-soft), transparent 68%);
+  mix-blend-mode: screen;
+}
+
+.auth-art-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-quote {
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  line-height: 1.6;
+  max-width: 34ch;
+  margin-top: 4px;
+}
+
+/* --- Setup page ---------------------------------------------------------- */
+
+.page-setup .auth-copy .eyebrow { margin-bottom: 2px; }
+.page-setup .alert-info { font-size: 0.82rem; line-height: 1.55; }
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .auth-card { grid-template-columns: 1fr; max-width: 480px; }
+  /* The artwork becomes a banner above the form rather than disappearing —
+     May is the reason this page does not look like every other login. */
+  .auth-art { order: -1; min-height: 172px; border-left: 0; border-bottom: 1px solid var(--border); }
+  .auth-art img { object-position: 60% 32%; }
+  .auth-art-copy { padding: 18px; }
+  .auth-quote { display: none; }
+}
+
+@media (max-width: 460px) {
+  .auth { padding: 0; }
+  .auth-card { border-radius: 0; border-left: 0; border-right: 0; min-height: 100dvh; align-content: start; }
+  .auth-art { min-height: 130px; }
+}

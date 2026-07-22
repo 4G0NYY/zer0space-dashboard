@@ -1,0 +1,163 @@
+/* ==========================================================================
+   Landing page — the only page a signed-out visitor is meant to spend time on.
+   ========================================================================== */
+
+/* --- Hero ---------------------------------------------------------------- */
+
+.hero { padding: clamp(56px, 11vw, 130px) 0 clamp(40px, 7vw, 80px); }
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(28px, 5vw, 70px);
+  align-items: center;
+}
+
+.hero-copy { display: flex; flex-direction: column; gap: 18px; max-width: 620px; }
+
+.hero-copy h1 {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.hero-kicker {
+  font-size: clamp(1.15rem, 2.6vw, 1.65rem);
+  font-weight: 420;
+  letter-spacing: 0.01em;
+  color: var(--text-dim);
+}
+
+/* The wordmark IS the headline here, so it drops the tracking it carries in the
+   header — at 4 rem the logo spacing reads as a gap, not as a logotype. */
+.wordmark-hero {
+  font-size: clamp(2.3rem, 7.2vw, 4.1rem);
+  letter-spacing: 0.05em;
+  text-indent: 0.05em;
+  font-weight: 720;
+}
+
+.hero-sub {
+  font-size: clamp(1.02rem, 2vw, 1.22rem);
+  font-weight: 560;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.hero-lede { color: var(--text-dim); max-width: 52ch; font-size: 0.98rem; }
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.hero-actions .btn { padding: 12px 24px; font-size: 0.95rem; }
+
+.hero-note { font-size: 0.82rem; }
+
+/* --- Hero artwork -------------------------------------------------------- */
+
+.hero-art { position: relative; justify-self: center; width: min(100%, 460px); }
+
+.hero-art img {
+  width: 100%;
+  height: auto;
+  border-radius: 50%;
+  border: 1px solid var(--accent-line);
+  box-shadow: 0 40px 90px -40px #000, 0 0 90px -30px var(--accent-glow);
+  animation: drift 7s var(--ease) infinite alternate;
+}
+
+/* A soft ring of accent light behind the portrait — the same treatment the
+   circular logo gets on the brand sheet. */
+.hero-art-glow {
+  position: absolute;
+  inset: -14%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-glow), transparent 62%);
+  filter: blur(28px);
+  opacity: 0.75;
+}
+
+/* --- Sections ------------------------------------------------------------ */
+
+.section-title { font-size: clamp(1.5rem, 3.4vw, 2rem); }
+.section-sub { margin-top: 8px; max-width: 56ch; }
+
+.features { padding: clamp(40px, 7vw, 90px) 0; }
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+  gap: 18px;
+  margin-top: 34px;
+}
+
+.feature {
+  padding: 26px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.28s var(--ease), border-color 0.28s var(--ease), box-shadow 0.28s var(--ease);
+}
+.feature:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow), 0 0 44px -18px var(--accent-glow);
+}
+.feature h3 { font-size: 1.08rem; }
+.feature p { font-size: 0.9rem; line-height: 1.6; }
+
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+.feature-icon svg { width: 22px; height: 22px; }
+
+/* --- Closing strip ------------------------------------------------------- */
+
+.strip { padding-bottom: 20px; }
+
+.strip-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  padding: 26px 28px;
+}
+.strip-inner h2 { font-size: 1.2rem; }
+.strip-inner p { font-size: 0.9rem; margin-top: 4px; }
+
+/* --- About modal --------------------------------------------------------- */
+
+.about-body { display: flex; gap: 18px; align-items: flex-start; }
+.about-body p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.65; }
+
+.about-art {
+  width: 116px;
+  height: 116px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--accent-line);
+  object-fit: cover;
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-art { order: -1; width: min(72%, 300px); }
+  .hero-copy { max-width: none; }
+}
+
+@media (max-width: 620px) {
+  .hero { padding-top: 40px; }
+  .hero-art { width: min(62%, 230px); }
+  .about-body { flex-direction: column; align-items: center; text-align: center; }
+  .strip-inner { padding: 22px; }
+  .strip-inner .push { margin-left: 0; }
+}

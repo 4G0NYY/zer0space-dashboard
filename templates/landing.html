@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Zer0space — Self-hosted. Secure. Automated.{% endblock %}
+{% block body_class %}page-landing{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/landing.css?v={{ asset_version }}">{% endblock %}
+
+{% block sky %}
+  {# The server-room shot from the brand sheet, faded into the right edge so it
+     frames the hero instead of competing with it (see .sky-photo in main.css). #}
+  <div class="sky-photo" style="background-image:url('/static/img/may-server.jpg')" aria-hidden="true"></div>
+{% endblock %}
+
+{% block body %}
+<header class="site-header">
+  <div class="shell">
+    {{ ui.wordmark("/") }}
+    <nav class="nav" aria-label="Hauptnavigation">
+      <a href="#top" class="is-active" data-i18n="nav.home">Start</a>
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="{{ github_url }}/zer0space-docs" rel="noopener" target="_blank" data-i18n="nav.docs">Docs</a>
+      <a href="#" data-modal-open="about" data-i18n="nav.about">Über</a>
+    </nav>
+    {{ ui.lang_toggle() }}
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="shell hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow reveal" data-i18n="landing.eyebrow">Homelab · Cloud · Automation</span>
+        <h1 class="reveal reveal-1">
+          <span class="hero-kicker" data-i18n="landing.welcome">Welcome to</span>
+          {{ ui.wordmark_static("wordmark-hero") }}
+        </h1>
+        <p class="hero-sub reveal reveal-2" data-i18n="landing.sub">Self-hosted. Secure. Automated.</p>
+        <p class="hero-lede reveal reveal-2" data-i18n="landing.lede">
+          Neun Maschinen, ein Fenster. Dienste, Metriken, Backups und ein
+          verschlüsselter Passwort-Tresor — alles auf eigener Hardware, hinter
+          einer Tür, die sich nur von innen öffnet.
+        </p>
+        <div class="hero-actions reveal reveal-3">
+          {% if signed_in %}
+            <a class="btn btn-primary" href="/dashboard" data-i18n="landing.toDashboard">Zum Dashboard</a>
+          {% else %}
+            <a class="btn btn-primary" href="/login" data-i18n="landing.getStarted">Get Started</a>
+          {% endif %}
+          <a class="btn btn-ghost" href="{{ github_url }}" rel="noopener" target="_blank" data-i18n="landing.github">
+            View on GitHub
+          </a>
+        </div>
+        <p class="hero-note faint reveal reveal-4" data-i18n="landing.inviteOnly">
+          Registrierung nur mit Einladungscode.
+        </p>
+      </div>
+
+      <div class="hero-art reveal reveal-2" aria-hidden="true">
+        <img src="/static/img/may-station.jpg" alt="" width="1100" height="1100" loading="eager" fetchpriority="high">
+        <div class="hero-art-glow"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="shell">
+      <h2 class="section-title" data-i18n="landing.featuresTitle">Was hier läuft</h2>
+      <p class="section-sub muted" data-i18n="landing.featuresSub">
+        Drei Bausteine, ein Cluster, kein Cloud-Abo.
+      </p>
+
+      <div class="feature-grid">
+        <article class="feature glass">
+          <span class="feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <rect x="3" y="4" width="18" height="5.5" rx="1.6"/>
+              <rect x="3" y="14.5" width="18" height="5.5" rx="1.6"/>
+              <path d="M6.6 6.75h.01M6.6 17.25h.01M10 6.75h4M10 17.25h4"/>
+            </svg>
+          </span>
+          <h3 data-i18n="landing.f1Title">Homelab</h3>
+          <p class="muted" data-i18n="landing.f1Body">
+            Ein Docker-Swarm aus neun Maschinen. Sieben davon austauschbar — stirbt
+            eine, läuft die Arbeit woanders weiter. Zwei nicht: Dateien und Datenbank.
+          </p>
+        </article>
+
+        <article class="feature glass">
+          <span class="feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 18.5a4.2 4.2 0 0 1-.4-8.38A5.6 5.6 0 0 1 17.4 9.9 3.8 3.8 0 0 1 17 18.5Z"/>
+              <path d="M12 12.4v5.4M12 12.4l-2.1 2.1M12 12.4l2.1 2.1"/>
+            </svg>
+          </span>
+          <h3 data-i18n="landing.f2Title">Cloud</h3>
+          <p class="muted" data-i18n="landing.f2Body">
+            Eigene Dienste statt fremder Server. Erreichbar über einen Tunnel, den
+            das Netz selbst öffnet — von außen gibt es keine Tür zum Klopfen.
+          </p>
+        </article>
+
+        <article class="feature glass">
+          <span class="feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3.2v3M12 17.8v3M4.8 12h3M16.2 12h3M6.9 6.9l2.1 2.1M15 15l2.1 2.1M17.1 6.9 15 9M9 15l-2.1 2.1"/>
+              <circle cx="12" cy="12" r="3.1"/>
+            </svg>
+          </span>
+          <h3 data-i18n="landing.f3Title">Automation</h3>
+          <p class="muted" data-i18n="landing.f3Body">
+            Backups, Metriken und Statusmeldungen laufen ohne Zutun. Das Log sagt,
+            was wirklich passiert ist — auch wenn das „noch nicht" heißt.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="strip">
+    <div class="shell strip-inner glass">
+      <div>
+        <h2 data-i18n="landing.ctaTitle">Schon eingeladen?</h2>
+        <p class="muted" data-i18n="landing.ctaBody">
+          Mit einem Einladungscode dauert das Anlegen des Kontos eine Minute.
+        </p>
+      </div>
+      <div class="row row-wrap push">
+        <a class="btn btn-primary" href="/register" data-i18n="landing.ctaRegister">Konto erstellen</a>
+        <a class="btn btn-ghost" href="/login" data-i18n="landing.ctaLogin">Anmelden</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="shell">
+    <div class="stack gap-6">
+      {{ ui.wordmark_static() }}
+      {{ ui.tagline() }}
+    </div>
+    <nav aria-label="Footer">
+      <a href="{{ github_url }}" rel="noopener" target="_blank">GitHub</a>
+      <a href="{{ github_url }}/zer0space-docs" rel="noopener" target="_blank" data-i18n="nav.docs">Docs</a>
+      <a href="{{ status_url }}" rel="noopener" target="_blank" data-i18n="footer.status">Status</a>
+      <a href="#" data-modal-open="about" data-i18n="nav.about">Über</a>
+      <a href="/login" data-i18n="nav.signIn">Anmelden</a>
+    </nav>
+  </div>
+</footer>
+
+{# About modal — the copy is taken verbatim from the brand sheet's About card. #}
+<div class="modal" id="modal-about" hidden>
+  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="modal-head">
+      {{ ui.brand_mark() }}
+      <div>
+        <h2 id="about-title" data-i18n="about.title">Über Zer0space</h2>
+        <p class="faint" data-i18n="about.kicker">Self-hosted. Secure. Automated.</p>
+      </div>
+      <button type="button" class="modal-close" data-modal-close data-i18n-aria="common.close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="about-body">
+      <img class="about-art" src="/static/img/may-avatar.jpg" alt="" width="420" height="420">
+      <p data-i18n="about.body">
+        Zer0space ist eine selbstgehostete Plattform für eigene Daten, Dienste und
+        Automatisierung. Mit Leidenschaft gebaut, läuft auf Docker, angetrieben von
+        Open Source.
+      </p>
+    </div>
+    <div class="row row-wrap gap-10" style="margin-top:20px">
+      <a class="btn btn-primary" href="{{ github_url }}" rel="noopener" target="_blank" data-i18n="about.learnMore">
+        Mehr auf GitHub
+      </a>
+      <a class="btn btn-ghost" href="{{ github_url }}/zer0space-docs" rel="noopener" target="_blank" data-i18n="nav.docs">Docs</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/landing.js?v={{ asset_version }}" defer></script>
+{% endblock %}
