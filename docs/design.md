@@ -42,6 +42,14 @@ whole theming mechanism: `--accent-soft`, `--accent-line` and `--accent-glow` ar
 computed from it, so writing one variable recolours buttons, focus rings, tile
 rails, bar fills, glows and the brand mark together.
 
+The tone goes deeper than the accents. The base backgrounds (`--bg`, `--bg-2`,
+`--bg-3`), the glass fills and the hairline borders each carry a few percent of
+`--accent` mixed into their near-black, and the `.sky` glows are `color-mix`-ed
+from it outright. So a red theme is not a blue-black page under a red glow — the
+whole surface shifts warm, hairlines included. The mix is deliberately small
+(5–8% on the base tones): enough to feel, not enough to stop reading as "almost
+black".
+
 Six presets ship (`aurora`, `cyan`, `violet`, `ember`, `mint`, `rose`) as
 `:root[data-theme="…"]` rules; a custom hex from the picker is written directly
 onto `--accent` with `data-theme="custom"`. The choice is stored twice: in
@@ -173,6 +181,20 @@ on a field of 1 px dots.
 lost when it stops moving, which is the test for whether it is safe to disable.
 
 ---
+
+## Service icons
+
+Service tiles carry an icon chosen from a fixed set (`static/js/icons.js`,
+~30 stroke glyphs) via a picker in the admin editor. Only the icon's **name**
+(`server`, `database`, `vault`…) is stored in `services.icon`; the SVG lives in
+that file and is looked up at render time.
+
+This is a security boundary, not just a convenience: a free-text SVG or HTML icon
+field is a stored-XSS hole the moment it reaches `innerHTML`. A name that indexes
+into a known map is safe by construction, and an unknown name (an old row, a typo)
+falls back to the service's initials rather than rendering nothing. Common
+synonyms are aliased — `portainer` → `docker`, `jellyfin` → `media` — so the name
+someone reaches for usually resolves.
 
 ## Status colour
 

@@ -26,17 +26,23 @@
   --accent-ink: #ffffff;
 
   /* Space. Not pure black — the brand art sits in very dark blue, and true
-     black next to it reads as a hole in the page. */
-  --bg: #04070e;
-  --bg-2: #070c17;
-  --bg-3: #0b1220;
+     black next to it reads as a hole in the page.
+     Each base tone carries a few percent of the accent, so switching the accent
+     to red does not leave a blue-black page under a red glow: the whole surface
+     shifts warm with it. The mix is small on purpose — enough to feel the tone,
+     not enough to stop reading as "almost black". */
+  --bg:   color-mix(in srgb, var(--accent) 5%, #04070e);
+  --bg-2: color-mix(in srgb, var(--accent) 7%, #070c17);
+  --bg-3: color-mix(in srgb, var(--accent) 8%, #0b1220);
 
   /* Glass. Two levels: panels sit on --glass, things inside them on --glass-2. */
-  --glass: rgba(13, 20, 36, 0.62);
-  --glass-2: rgba(20, 29, 48, 0.58);
-  --glass-solid: #0d1424;
-  --border: rgba(120, 160, 225, 0.14);
-  --border-strong: rgba(120, 160, 225, 0.26);
+  --glass:   color-mix(in srgb, var(--accent) 6%, rgba(13, 20, 36, 0.62));
+  --glass-2: color-mix(in srgb, var(--accent) 6%, rgba(20, 29, 48, 0.58));
+  --glass-solid: color-mix(in srgb, var(--accent) 7%, #0d1424);
+  /* Hairlines follow the accent too, so a red theme has warm borders rather than
+     blue ones fighting the glow. */
+  --border:        color-mix(in srgb, var(--accent) 20%, rgba(150, 170, 210, 0.12));
+  --border-strong: color-mix(in srgb, var(--accent) 32%, rgba(150, 170, 210, 0.22));
 
   --text: #e9eefa;
   --text-dim: #94a5c2;
@@ -146,10 +152,14 @@ ul { margin: 0; padding: 0; list-style: none; }
 }
 
 .sky {
+  /* Every glow is derived from --accent (the second one keeps a hint of violet
+     mixed in so the field has some depth instead of one flat hue). Switching the
+     accent recolours the entire backdrop — the "reddish landing page" the theme
+     picker is supposed to give you. */
   background:
-    radial-gradient(1100px 600px at 78% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
-    radial-gradient(900px 700px at 8% 104%, rgba(88, 60, 190, 0.16), transparent 60%),
-    radial-gradient(600px 400px at 50% 40%, rgba(20, 60, 140, 0.10), transparent 70%),
+    radial-gradient(1100px 600px at 78% -8%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 62%),
+    radial-gradient(900px 700px at 8% 104%, color-mix(in srgb, var(--accent) 15%, rgba(88, 60, 190, 0.12)), transparent 60%),
+    radial-gradient(600px 400px at 50% 40%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
     linear-gradient(175deg, var(--bg-2) 0%, var(--bg) 55%, #02050a 100%);
 }
 

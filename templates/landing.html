@@ -148,9 +148,10 @@
   </div>
 </footer>
 
-{# About modal — the copy is taken verbatim from the brand sheet's About card. #}
+{# About modal. Two parts: what Zer0space is, and who May is — the second is the
+   piece people actually ask about. #}
 <div class="modal" id="modal-about" hidden>
-  <div class="modal-card glass" role="dialog" aria-modal="true" aria-labelledby="about-title">
+  <div class="modal-card glass about-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
     <div class="modal-head">
       {{ ui.brand_mark() }}
       <div>
@@ -159,15 +160,62 @@
       </div>
       <button type="button" class="modal-close" data-modal-close data-i18n-aria="common.close" aria-label="Schließen">&times;</button>
     </div>
+
     <div class="about-body">
-      <img class="about-art" src="/static/img/may-avatar.jpg" alt="" width="420" height="420">
-      <p data-i18n="about.body">
-        Zer0space ist eine selbstgehostete Plattform für eigene Daten, Dienste und
-        Automatisierung. Mit Leidenschaft gebaut, läuft auf Docker, angetrieben von
-        Open Source.
-      </p>
+      <img class="about-art" src="/static/img/may-station.jpg" alt="" width="1100" height="1100">
+      <div class="stack gap-10">
+        <p data-i18n="about.body">
+          Zer0space ist eine selbstgehostete Plattform für eigene Daten, Dienste und
+          Automatisierung. Mit Leidenschaft gebaut, läuft auf Docker, angetrieben von
+          Open Source.
+        </p>
+        <p class="muted" data-i18n="about.body2">
+          Darunter läuft ein Docker-Swarm aus neun Maschinen — sieben austauschbar,
+          zwei halten Datenbank und Dateien. Erreichbar nur über einen Tunnel, den das
+          Netz selbst nach außen öffnet; von außen gibt es keine Tür zum Klopfen. Konten
+          entstehen ausschließlich per Einladung, Passwörter liegen verschlüsselt in
+          einem Tresor, dessen Schlüssel nie die Datenbank berührt.
+        </p>
+      </div>
     </div>
-    <div class="row row-wrap gap-10" style="margin-top:20px">
+
+    <div class="about-facts">
+      <span class="fact"><strong>9</strong><span data-i18n="about.factMachines">Maschinen</span></span>
+      <span class="fact"><strong>0</strong><span data-i18n="about.factState">lokaler Zustand</span></span>
+      <span class="fact"><strong>AES-256</strong><span data-i18n="about.factVault">Tresor</span></span>
+      <span class="fact"><strong>100%</strong><span data-i18n="about.factOSS">Open Source</span></span>
+    </div>
+
+    <div class="about-sep"></div>
+
+    {# Who is May — the mascot, taken from her character sheet and story in
+       zer0space-docs. #}
+    <div class="about-may">
+      <img class="about-may-art" src="/static/img/may-avatar.jpg" alt="" width="420" height="420">
+      <div class="stack gap-10">
+        <h3 data-i18n="about.whoTitle">Wer ist May?</h3>
+        <p class="muted" data-i18n="about.whoBody">
+          May ist das Maskottchen von Zer0space — und die Figur, die über alles wacht.
+          Sie betreibt keine der neun Maschinen. Sie beobachtet sie alle, damit es
+          niemand sonst tun muss: neun Lampen in neun Fenstern eines Hauses, dem sie
+          vertraut. Sieben davon sind ihr bewusst gleich — stirbt eine, läuft die
+          Arbeit woanders weiter. Zwei kennt sie beim Namen: eine hält die Dateien,
+          eine die Datenbank.
+        </p>
+        <p class="muted" data-i18n="about.whoBody2">
+          Ihre Regel ist die des Clusters: halte nichts, was du nicht verlieren kannst.
+          Was sie bemerkt, wandert ins Log und aufs Dashboard — nach draußen, wo es die
+          nächste Person aufnehmen kann. Und sie schreibt ehrlich auf, was wirklich
+          war, auch wenn das „noch nicht" heißt. Ein Eintrag, der „in Ordnung" sagt,
+          obwohl er es nicht ist, ist die Art Lüge, die erst zum schlimmsten Zeitpunkt
+          auffällt.
+        </p>
+        <a class="about-may-link" href="{{ github_url }}/zer0space-docs/blob/main/may%20(mascot)/story.md"
+           rel="noopener" target="_blank" data-i18n="about.mayLink">Mays ganze Geschichte lesen →</a>
+      </div>
+    </div>
+
+    <div class="row row-wrap gap-10" style="margin-top:22px">
       <a class="btn btn-primary" href="{{ github_url }}" rel="noopener" target="_blank" data-i18n="about.learnMore">
         Mehr auf GitHub
       </a>

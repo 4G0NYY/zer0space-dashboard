@@ -106,6 +106,26 @@
     if ($('sidebar-close')) $('sidebar-close').addEventListener('click', function () { openNav(false); });
     if (scrim) scrim.addEventListener('click', function () { openNav(false); });
 
+    // Desktop collapse to an icon rail, remembered per browser. Deliberately a
+    // separate concept from the mobile drawer above: the drawer is open/closed,
+    // the rail is wide/narrow, and conflating them made the button do the wrong
+    // thing at whichever width you were not testing.
+    var COLLAPSE_KEY = 'zs-sidebar';
+    function setCollapsed(on) {
+      if (app) app.classList.toggle('is-collapsed', on);
+      try { localStorage.setItem(COLLAPSE_KEY, on ? 'collapsed' : 'expanded'); } catch (e) { /* ignore */ }
+      var btn = $('sidebar-collapse');
+      if (btn) btn.setAttribute('aria-label', t(on ? 'nav.expand' : 'nav.collapse'));
+    }
+    try {
+      if (localStorage.getItem(COLLAPSE_KEY) === 'collapsed') setCollapsed(true);
+    } catch (e) { /* storage blocked */ }
+    if ($('sidebar-collapse')) {
+      $('sidebar-collapse').addEventListener('click', function () {
+        setCollapsed(!(app && app.classList.contains('is-collapsed')));
+      });
+    }
+
     window.addEventListener('hashchange', function () {
       setView(window.location.hash.slice(1));
     });
@@ -258,9 +278,13 @@
 
   function serviceTile(service) {
     var href = UI.safeUrl(service.url);
-    var initials = (service.name || '?').trim().slice(0, 2);
+    // A named icon from the ZS_ICONS set, or the initials as a fallback — an
+    // older service with no icon, or a name the set does not cover, still shows
+    // something rather than an empty square.
+    var iconSvg = window.ZS_ICONS && window.ZS_ICONS.svg(service.icon);
+    var glyph = iconSvg || esc((service.name || '?').trim().slice(0, 2));
     var inner =
-      '<span class="service-icon" aria-hidden="true">' + esc(initials) + '</span>' +
+      '<span class="service-icon" aria-hidden="true">' + glyph + '</span>' +
       '<span class="service-text">' +
         '<strong>' + esc(service.name) + '</strong>' +
         '<span>' + esc(service.description || '') + '</span>' +
@@ -292,8 +316,9 @@
 
     if (el['service-rows']) {
       el['service-rows'].innerHTML = all.length ? all.map(function (s) {
+        var ico = (window.ZS_ICONS && window.ZS_ICONS.svg(s.icon, 17)) || '';
         return '<tr>' +
-                 '<td>' + esc(s.name) + '</td>' +
+                 '<td><span class="row-icon">' + ico + '</span>' + esc(s.name) + '</td>' +
                  '<td><span class="badge">' + esc(t('cat.' + (s.category || 'general'))) + '</span></td>' +
                  '<td class="mono">' + esc(s.url || '—') + '</td>' +
                  '<td class="col-actions">' +
@@ -714,7 +739,36 @@
 
   /* --- Admin: services --------------------------------------------------- */
 
+  // Build the icon grid once, then just re-mark the selected tile on open. The
+  // picker keeps its choice in the hidden #service-icon input so the submit
+  // handler reads it like any other field.
+  function buildIconPicker() {
+    var picker = $('icon-picker');
+    if (!picker || !window.ZS_ICONS) return;
+    picker.innerHTML = window.ZS_ICONS.names.map(function (name) {
+      return '<button type="button" class="icon-pick" role="option" data-icon="' + name +
+             '" aria-selected="false" title="' + name + '">' + window.ZS_ICONS.svg(name, 20) + '</button>';
+    }).join('');
+    picker.addEventListener('click', function (event) {
+      var pick = event.target.closest('[data-icon]');
+      if (!pick) return;
+      selectIcon(pick.dataset.icon);
+    });
+  }
+
+  function selectIcon(name) {
+    var resolved = (window.ZS_ICONS && window.ZS_ICONS.resolve(name)) || 'grid';
+    $('service-icon').value = resolved;
+    var picker = $('icon-picker');
+    if (!picker) return;
+    picker.querySelectorAll('[data-icon]').forEach(function (el) {
+      el.setAttribute('aria-selected', String(el.dataset.icon === resolved));
+    });
+  }
+
   function wireServiceAdmin() {
+    buildIconPicker();
+
     if ($('service-new')) {
       $('service-new').addEventListener('click', function () {
         $('service-error').hidden = true;
@@ -723,6 +777,7 @@
         $('service-desc').value = '';
         $('service-url').value = '';
         $('service-category').value = 'general';
+        selectIcon('grid');
         $('service-modal-title').textContent = t('settings.serviceNew');
         UI.openModal('service');
       });
@@ -739,6 +794,7 @@
         $('service-desc').value = service.description || '';
         $('service-url').value = service.url || '';
         $('service-category').value = service.category || 'general';
+        selectIcon(service.icon || 'grid');
         $('service-modal-title').textContent = t('settings.serviceEdit');
         UI.openModal('service');
         return;
@@ -765,7 +821,8 @@
           name: $('service-name').value,
           description: $('service-desc').value,
           url: $('service-url').value,
-          category: $('service-category').value
+          category: $('service-category').value,
+          icon: $('service-icon').value || 'grid'
         };
         try {
           if (id) await API.put('/api/services/' + id, payload);

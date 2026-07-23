@@ -20,6 +20,10 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       {{ ui.wordmark("/dashboard") }}
+      <button type="button" class="btn-icon sidebar-collapse" id="sidebar-collapse"
+              data-i18n-aria="nav.collapse" aria-label="Seitenleiste einklappen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14 7-5 5 5 5M18 7v10"/></svg>
+      </button>
       <button type="button" class="btn-icon sidebar-close" id="sidebar-close"
               data-i18n-aria="nav.closeMenu" aria-label="Menü schließen">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -471,6 +475,13 @@
           <option value="tools" data-i18n="cat.tools">Werkzeuge</option>
         </select>
       </div>
+      <div class="field">
+        <label data-i18n="settings.icon">Symbol</label>
+        <input type="hidden" id="service-icon" value="grid">
+        <!-- Rendered by app.js from the ZS_ICONS set; selecting a tile writes its
+             name into #service-icon. No free-text SVG input on purpose. -->
+        <div class="icon-picker" id="icon-picker" role="listbox" aria-label="Symbol"></div>
+      </div>
       <div class="row gap-10 row-wrap">
         <button class="btn btn-primary" type="submit" data-i18n="common.save">Speichern</button>
         <button class="btn btn-ghost" type="button" data-modal-close data-i18n="common.cancel">Abbrechen</button>
@@ -482,6 +493,7 @@
 
 {% block scripts %}
 <script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/icons.js?v={{ asset_version }}"></script>
 <script src="/static/js/password-strength.js?v={{ asset_version }}"></script>
 <script src="/static/js/app.js?v={{ asset_version }}" defer></script>
 {% endblock %}

@@ -134,17 +134,56 @@
 
 /* --- About modal --------------------------------------------------------- */
 
+.about-card { max-width: 640px; }
+
 .about-body { display: flex; gap: 18px; align-items: flex-start; }
-.about-body p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.65; }
+.about-body p { color: var(--text); font-size: 0.92rem; line-height: 1.65; }
+.about-body p.muted { color: var(--text-dim); font-size: 0.88rem; }
 
 .about-art {
-  width: 116px;
-  height: 116px;
+  width: 128px;
+  height: 128px;
+  flex: none;
+  border-radius: 18px;
+  border: 1px solid var(--accent-line);
+  object-fit: cover;
+  object-position: center 20%;
+}
+
+/* Fact chips — a compact "at a glance" strip under the intro copy. */
+.about-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 18px;
+}
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(6, 11, 22, 0.4);
+  text-align: center;
+}
+.fact strong { font-size: 1.02rem; color: var(--accent); letter-spacing: -0.01em; }
+.fact span { font-size: 0.68rem; color: var(--text-faint); letter-spacing: 0.02em; }
+
+.about-sep { height: 1px; background: var(--border); margin: 22px 0; }
+
+.about-may { display: flex; gap: 18px; align-items: flex-start; }
+.about-may h3 { font-size: 1.08rem; }
+.about-may p { font-size: 0.88rem; line-height: 1.65; }
+.about-may-art {
+  width: 108px;
+  height: 108px;
   flex: none;
   border-radius: 50%;
   border: 1px solid var(--accent-line);
   object-fit: cover;
 }
+.about-may-link { font-size: 0.85rem; font-weight: 560; align-self: flex-start; }
 
 /* --- Responsive ---------------------------------------------------------- */
 
@@ -158,6 +197,9 @@
   .hero { padding-top: 40px; }
   .hero-art { width: min(62%, 230px); }
   .about-body { flex-direction: column; align-items: center; text-align: center; }
+  .about-may { flex-direction: column; align-items: center; text-align: center; }
+  .about-may-link { align-self: center; }
+  .about-facts { grid-template-columns: repeat(2, 1fr); }
   .strip-inner { padding: 22px; }
   .strip-inner .push { margin-left: 0; }
 }
