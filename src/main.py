@@ -43,7 +43,7 @@ from . import auth, config, db, metrics, vault
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.1.0"
+ASSET_VERSION = "4.2.0"
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)
@@ -475,6 +475,21 @@ async def dashboard_page(request: Request) -> Response:
     if not session or not session.get("user_id"):
         return RedirectResponse("/login", status_code=303)
     return page(request, "dashboard.html", username=session.get("username"), role=session.get("role"))
+
+
+@app.get("/monitoring", response_class=HTMLResponse)
+async def monitoring_page(request: Request) -> Response:
+    """A stripped-down, always-on view of the cluster — built for a wall display
+    or a kiosk iPad that should show at a glance that everything is fine.
+
+    Behind the same session gate as the dashboard: it reads /api/overview, which
+    discloses internal topology, so it is not public. A kiosk stays signed in for
+    the session's lifetime (24h) and needs a fresh login only after a restart.
+    """
+    session = get_session(request)
+    if not session or not session.get("user_id"):
+        return RedirectResponse("/login", status_code=303)
+    return page(request, "monitoring.html")
 
 
 @app.get("/maintenance", response_class=HTMLResponse)

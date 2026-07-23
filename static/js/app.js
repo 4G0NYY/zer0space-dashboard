@@ -103,14 +103,15 @@
       if (scrim) scrim.hidden = !open;
     }
     if ($('sidebar-open')) $('sidebar-open').addEventListener('click', function () { openNav(true); });
-    if ($('sidebar-close')) $('sidebar-close').addEventListener('click', function () { openNav(false); });
     if (scrim) scrim.addEventListener('click', function () { openNav(false); });
 
-    // Desktop collapse to an icon rail, remembered per browser. Deliberately a
-    // separate concept from the mobile drawer above: the drawer is open/closed,
-    // the rail is wide/narrow, and conflating them made the button do the wrong
-    // thing at whichever width you were not testing.
+    // One three-lines button, two jobs by width. On desktop it folds the sidebar
+    // to a rail, remembered per browser. On mobile it closes the drawer — the
+    // topbar three-lines opens it. The two are kept apart on purpose: the drawer
+    // is open/closed, the rail is wide/narrow, and merging them made the button
+    // do the wrong thing at whichever width you were not testing.
     var COLLAPSE_KEY = 'zs-sidebar';
+    function isMobile() { return window.matchMedia('(max-width: 1000px)').matches; }
     function setCollapsed(on) {
       if (app) app.classList.toggle('is-collapsed', on);
       try { localStorage.setItem(COLLAPSE_KEY, on ? 'collapsed' : 'expanded'); } catch (e) { /* ignore */ }
@@ -122,7 +123,8 @@
     } catch (e) { /* storage blocked */ }
     if ($('sidebar-collapse')) {
       $('sidebar-collapse').addEventListener('click', function () {
-        setCollapsed(!(app && app.classList.contains('is-collapsed')));
+        if (isMobile()) openNav(false);
+        else setCollapsed(!(app && app.classList.contains('is-collapsed')));
       });
     }
 
@@ -278,11 +280,10 @@
 
   function serviceTile(service) {
     var href = UI.safeUrl(service.url);
-    // A named icon from the ZS_ICONS set, or the initials as a fallback — an
-    // older service with no icon, or a name the set does not cover, still shows
-    // something rather than an empty square.
-    var iconSvg = window.ZS_ICONS && window.ZS_ICONS.svg(service.icon);
-    var glyph = iconSvg || esc((service.name || '?').trim().slice(0, 2));
+    // A Tabler icon class from the stored name, or the service's initials when
+    // there is none — an older row with no icon still shows something.
+    var cls = window.ZS_ICONS && window.ZS_ICONS.cls(service.icon);
+    var glyph = cls ? '<i class="' + esc(cls) + '"></i>' : esc((service.name || '?').trim().slice(0, 2));
     var inner =
       '<span class="service-icon" aria-hidden="true">' + glyph + '</span>' +
       '<span class="service-text">' +
@@ -316,7 +317,8 @@
 
     if (el['service-rows']) {
       el['service-rows'].innerHTML = all.length ? all.map(function (s) {
-        var ico = (window.ZS_ICONS && window.ZS_ICONS.svg(s.icon, 17)) || '';
+        var cls = (window.ZS_ICONS && window.ZS_ICONS.cls(s.icon)) || '';
+        var ico = cls ? '<i class="' + esc(cls) + '"></i>' : '';
         return '<tr>' +
                  '<td><span class="row-icon">' + ico + '</span>' + esc(s.name) + '</td>' +
                  '<td><span class="badge">' + esc(t('cat.' + (s.category || 'general'))) + '</span></td>' +
@@ -739,35 +741,42 @@
 
   /* --- Admin: services --------------------------------------------------- */
 
-  // Build the icon grid once, then just re-mark the selected tile on open. The
-  // picker keeps its choice in the hidden #service-icon input so the submit
-  // handler reads it like any other field.
-  function buildIconPicker() {
-    var picker = $('icon-picker');
-    if (!picker || !window.ZS_ICONS) return;
-    picker.innerHTML = window.ZS_ICONS.names.map(function (name) {
-      return '<button type="button" class="icon-pick" role="option" data-icon="' + name +
-             '" aria-selected="false" title="' + name + '">' + window.ZS_ICONS.svg(name, 20) + '</button>';
-    }).join('');
-    picker.addEventListener('click', function (event) {
-      var pick = event.target.closest('[data-icon]');
-      if (!pick) return;
-      selectIcon(pick.dataset.icon);
-    });
+  // The icon field is a free Tabler name with a live preview. Typing updates the
+  // preview; a quick-pick chip fills the name. The value rides in #service-icon
+  // like any other field, so the submit handler needs no special case.
+  function updateIconPreview() {
+    var input = $('service-icon');
+    var preview = $('icon-preview');
+    if (!input || !preview) return;
+    input.value = window.ZS_ICONS.sanitize(input.value);
+    var cls = window.ZS_ICONS.cls(input.value);
+    preview.innerHTML = cls ? '<i class="' + cls + '"></i>' : '<i class="ti ti-help"></i>';
+    preview.classList.toggle('is-empty', !cls);
   }
 
-  function selectIcon(name) {
-    var resolved = (window.ZS_ICONS && window.ZS_ICONS.resolve(name)) || 'grid';
-    $('service-icon').value = resolved;
-    var picker = $('icon-picker');
-    if (!picker) return;
-    picker.querySelectorAll('[data-icon]').forEach(function (el) {
-      el.setAttribute('aria-selected', String(el.dataset.icon === resolved));
+  function setIcon(name) {
+    var input = $('service-icon');
+    if (input) input.value = window.ZS_ICONS.sanitize(name);
+    updateIconPreview();
+  }
+
+  function buildIconSuggest() {
+    var box = $('icon-suggest');
+    if (!box || !window.ZS_ICONS) return;
+    box.innerHTML = window.ZS_ICONS.suggest.map(function (name) {
+      return '<button type="button" class="icon-chip" data-icon="' + name +
+             '" title="' + name + '"><i class="ti ti-' + name + '"></i></button>';
+    }).join('');
+    box.addEventListener('click', function (event) {
+      var chip = event.target.closest('[data-icon]');
+      if (chip) setIcon(chip.dataset.icon);
     });
+    var input = $('service-icon');
+    if (input) input.addEventListener('input', updateIconPreview);
   }
 
   function wireServiceAdmin() {
-    buildIconPicker();
+    buildIconSuggest();
 
     if ($('service-new')) {
       $('service-new').addEventListener('click', function () {
@@ -777,7 +786,7 @@
         $('service-desc').value = '';
         $('service-url').value = '';
         $('service-category').value = 'general';
-        selectIcon('grid');
+        setIcon('grid-dots');
         $('service-modal-title').textContent = t('settings.serviceNew');
         UI.openModal('service');
       });
@@ -794,7 +803,7 @@
         $('service-desc').value = service.description || '';
         $('service-url').value = service.url || '';
         $('service-category').value = service.category || 'general';
-        selectIcon(service.icon || 'grid');
+        setIcon(service.icon || 'grid-dots');
         $('service-modal-title').textContent = t('settings.serviceEdit');
         UI.openModal('service');
         return;
@@ -822,7 +831,7 @@
           description: $('service-desc').value,
           url: $('service-url').value,
           category: $('service-category').value,
-          icon: $('service-icon').value || 'grid'
+          icon: window.ZS_ICONS.sanitize($('service-icon').value) || 'grid-dots'
         };
         try {
           if (id) await API.put('/api/services/' + id, payload);

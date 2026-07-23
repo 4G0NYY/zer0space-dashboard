@@ -1,0 +1,116 @@
+/* ==========================================================================
+   Monitoring wall — an always-on, glanceable view for a tablet or a screen on
+   the shelf. Bigger type, more air, one screen you never interact with.
+   Reuses .tile / .host / .metric / .bar from dashboard.css; this file is the
+   shell and the size overrides.
+   ========================================================================== */
+
+.page-monitoring { overflow-y: auto; }
+
+.wall {
+  width: min(100% - 40px, 1600px);
+  margin-inline: auto;
+  padding: clamp(16px, 2.5vw, 30px) 0 60px;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.5vw, 30px);
+}
+
+/* --- Header -------------------------------------------------------------- */
+
+.wall-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+
+.wall-brand { display: flex; align-items: center; gap: 14px; }
+.wall-sep { width: 1px; height: 22px; background: var(--border-strong); }
+.wall-heading {
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.wall-status { display: flex; align-items: center; gap: 14px; margin-left: auto; flex-wrap: wrap; }
+
+/* The one-word verdict at the top: green when everything is fine, and the whole
+   pill picks up the state colour so it reads across the room. */
+.wall-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-weight: 620;
+  font-size: 0.9rem;
+  border: 1px solid var(--wall-color, var(--border-strong));
+  color: var(--wall-color, var(--text));
+  background: color-mix(in srgb, var(--wall-color, transparent) 12%, transparent);
+}
+.wall-overall[data-state="healthy"]  { --wall-color: var(--ok); }
+.wall-overall[data-state="warning"]  { --wall-color: var(--warn); }
+.wall-overall[data-state="critical"] { --wall-color: var(--crit); }
+.wall-overall[data-state="unknown"]  { --wall-color: var(--unknown); }
+.wall-overall .dot { box-shadow: none; }
+
+.wall-clock { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; }
+.wall-updated { font-size: 0.76rem; }
+
+.wall-banner { margin: 0; }
+.wall-banner[hidden] { display: none; }
+
+/* --- Tiles --------------------------------------------------------------- */
+
+.wall-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: clamp(12px, 1.6vw, 18px);
+}
+.wall-tiles .tile { padding: 20px 22px 22px; }
+.wall-tiles .tile-value { font-size: clamp(1.9rem, 3vw, 2.6rem); }
+.wall-tiles .tile-label { font-size: 0.76rem; }
+.wall-tiles .tile-detail { font-size: 0.86rem; }
+
+/* --- Sections & hosts ---------------------------------------------------- */
+
+.wall-section { display: flex; flex-direction: column; gap: 14px; }
+.wall-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 640;
+}
+
+.wall-hosts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: clamp(12px, 1.6vw, 18px);
+}
+.wall-hosts .host { padding: 20px 22px 22px; gap: 15px; }
+.wall-hosts .host-name { font-size: 1.05rem; }
+.wall-hosts .metric-name { font-size: 0.72rem; }
+.wall-hosts .metric-val { font-size: 0.82rem; }
+.wall-hosts .bar { height: 7px; }
+.wall-hosts .host-net { font-size: 0.8rem; }
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .wall { width: calc(100% - 24px); }
+  .wall-status { width: 100%; }
+  .wall-clock { margin-left: auto; }
+}
+
+/* On a real wall/tablet the screen is often left untouched for hours — respect
+   reduced motion by dropping the live-dot pulse there too (handled globally in
+   main.css), and keep the layout dense enough to fit a 4:3 iPad without scroll
+   for a typical 7–9 node cluster. */
+@media (min-width: 1100px) {
+  .wall-tiles { grid-template-columns: repeat(5, 1fr); }
+}

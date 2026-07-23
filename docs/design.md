@@ -184,17 +184,43 @@ lost when it stops moving, which is the test for whether it is safe to disable.
 
 ## Service icons
 
-Service tiles carry an icon chosen from a fixed set (`static/js/icons.js`,
-~30 stroke glyphs) via a picker in the admin editor. Only the icon's **name**
-(`server`, `database`, `vault`…) is stored in `services.icon`; the SVG lives in
-that file and is looked up at render time.
+Service tiles can carry **any icon from [Tabler Icons](https://tabler.io/icons)**
+(~5900 of them). The admin editor is a name field with a live preview and a strip
+of common quick-picks; the operator types `server`, `brand-docker`, `database`,
+and sees it resolve before saving.
 
-This is a security boundary, not just a convenience: a free-text SVG or HTML icon
-field is a stored-XSS hole the moment it reaches `innerHTML`. A name that indexes
-into a known map is safe by construction, and an unknown name (an old row, a typo)
-falls back to the service's initials rather than rendering nothing. Common
-synonyms are aliased — `portainer` → `docker`, `jellyfin` → `media` — so the name
-someone reaches for usually resolves.
+The webfont is **vendored locally** at `static/vendor/tabler/` — the CSP forbids a
+CDN, and 800 KB of woff2 covers the whole set in one cached file, so it is
+self-hosted rather than linked out.
+
+Only the icon **name** is stored in `services.icon`, and it is sanitised to
+`[a-z0-9-]` before it ever reaches the DOM (`static/js/icons.js`). That is the
+security boundary: the value is admin-controlled and lands in `innerHTML` as a
+`ti ti-<name>` class, so it must be a bare slug and nothing else — a free-text SVG
+or emoji field would be a stored-XSS hole. An empty or unknown name falls back to
+the service's initials rather than rendering an empty square, which is why the
+editor shows the preview.
+
+## The monitoring wall
+
+`/monitoring` is a second, stripped-down view of the same data, built for a screen
+that is left on — a shelf tablet, a spare monitor, a kiosk iPad. Bigger type, more
+air, a one-word verdict pill at the top that turns the whole chip green/amber/red
+so it reads across a room, and no sidebar or chibi to touch.
+
+Three things make it wall-appropriate rather than just a second dashboard:
+
+- it polls **unconditionally**, ignoring tab visibility — the dashboard pauses
+  when hidden to spare the Glances agents, but a wall display that stopped
+  updating when unfocused would defeat its own purpose;
+- a failed poll **keeps the last good numbers on screen** under a banner, because
+  a monitoring page going blank is indistinguishable from the thing it monitors
+  going down;
+- it reuses the exact `.tile` / `.host` markup and classes from the dashboard, so
+  a card can never look one way here and another way there.
+
+It sits behind the same session gate as everything else (it discloses topology),
+reached from a button in the dashboard topbar that opens it in its own tab.
 
 ## Status colour
 

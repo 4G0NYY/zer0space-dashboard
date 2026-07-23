@@ -42,6 +42,7 @@
     'nav.closeMenu': 'Menü schließen',
     'nav.collapse': 'Seitenleiste einklappen',
     'nav.expand': 'Seitenleiste ausklappen',
+    'nav.monitoring': 'Monitoring',
 
     'common.username': 'Benutzername',
     'common.password': 'Passwort',
@@ -152,6 +153,16 @@
     'maint.retry': 'Erneut versuchen',
 
     'loading.text': 'Lade dein Universum …',
+
+    'mon.title': 'Monitoring',
+    'mon.checking': 'Prüfe …',
+    'mon.fullscreen': 'Vollbild',
+    'mon.back': 'Zurück zum Dashboard',
+    'mon.updated': 'Aktualisiert {time}',
+    'mon.overall.healthy': 'Alles in Ordnung',
+    'mon.overall.warning': 'Warnung',
+    'mon.overall.critical': 'Kritisch',
+    'mon.overall.unknown': 'Keine Daten',
 
     'chibi.title': 'May sagt hallo',
     'chibi.hide': 'May ausblenden',
@@ -271,6 +282,7 @@
     'settings.serviceEdit': 'Dienst bearbeiten',
     'settings.category': 'Bereich',
     'settings.icon': 'Symbol',
+    'settings.iconBrowse': 'Alle Symbole durchsuchen ↗',
     'settings.noServices': 'Noch keine Dienste eingetragen.',
     'settings.confirmDeleteService': 'Dienst „{name}" löschen?',
     'settings.audit': 'Login-Versuche',
@@ -363,6 +375,7 @@
     'nav.closeMenu': 'Close menu',
     'nav.collapse': 'Collapse sidebar',
     'nav.expand': 'Expand sidebar',
+    'nav.monitoring': 'Monitoring',
 
     'common.username': 'Username',
     'common.password': 'Password',
@@ -473,6 +486,16 @@
     'maint.retry': 'Try again',
 
     'loading.text': 'Loading your universe …',
+
+    'mon.title': 'Monitoring',
+    'mon.checking': 'Checking …',
+    'mon.fullscreen': 'Fullscreen',
+    'mon.back': 'Back to dashboard',
+    'mon.updated': 'Updated {time}',
+    'mon.overall.healthy': 'All systems fine',
+    'mon.overall.warning': 'Warning',
+    'mon.overall.critical': 'Critical',
+    'mon.overall.unknown': 'No data',
 
     'chibi.title': 'May says hi',
     'chibi.hide': 'Hide May',
@@ -592,6 +615,7 @@
     'settings.serviceEdit': 'Edit service',
     'settings.category': 'Section',
     'settings.icon': 'Icon',
+    'settings.iconBrowse': 'Browse all icons ↗',
     'settings.noServices': 'No services configured yet.',
     'settings.confirmDeleteService': 'Delete service "{name}"?',
     'settings.audit': 'Login attempts',

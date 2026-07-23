@@ -34,11 +34,9 @@
 }
 
 .sidebar-head { display: flex; align-items: center; gap: 10px; padding: 4px 6px 6px; }
-.sidebar-close { display: none; margin-left: auto; }
-/* The desktop collapse toggle. Hidden on mobile, where the drawer close (X)
-   does the equivalent job. */
+/* The single sidebar control (three lines). Desktop: collapse to a rail.
+   Mobile: close the drawer. */
 .sidebar-collapse { display: grid; margin-left: auto; }
-.sidebar-collapse svg { transition: transform 0.28s var(--ease); }
 
 /* --- Collapsed rail ------------------------------------------------------ */
 
@@ -46,7 +44,6 @@
 .app.is-collapsed .sidebar-head { justify-content: center; padding: 4px 0 6px; width: 100%; }
 .app.is-collapsed .sidebar-head .wordmark { display: none; }
 .app.is-collapsed .sidebar-collapse { margin-left: 0; }
-.app.is-collapsed .sidebar-collapse svg { transform: rotate(180deg); }
 .app.is-collapsed .nav-item { justify-content: center; padding-inline: 0; width: 42px; }
 .app.is-collapsed .nav-item span { display: none; }
 .app.is-collapsed .sidebar-foot { align-items: center; }
@@ -317,38 +314,41 @@
   text-transform: uppercase;
 }
 .service-icon svg { width: 21px; height: 21px; }
+.service-icon .ti { font-size: 21px; line-height: 1; }
 
-/* --- Icon picker (service editor) --------------------------------------- */
+/* --- Icon input (service editor) ---------------------------------------- */
 
-.icon-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
-  gap: 6px;
-  max-height: 168px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: rgba(6, 11, 22, 0.5);
-}
-.icon-pick {
-  aspect-ratio: 1;
+.icon-input { display: flex; align-items: stretch; gap: 10px; }
+.icon-input .input { flex: 1; min-width: 0; }
+.icon-preview {
+  flex: none;
+  width: 44px;
   display: grid;
   place-items: center;
-  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.icon-preview .ti { font-size: 22px; line-height: 1; }
+.icon-preview.is-empty { color: var(--text-faint); background: rgba(6, 11, 22, 0.5); border-color: var(--border); }
+
+.icon-help { font-size: 0.78rem; margin-top: -4px; }
+
+.icon-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.icon-chip {
+  display: inline-grid;
+  place-items: center;
+  width: 34px; height: 34px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
-.icon-pick:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
-.icon-pick[aria-selected="true"] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-}
-.icon-pick svg { width: 20px; height: 20px; }
+.icon-chip:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+.icon-chip .ti { font-size: 18px; line-height: 1; }
 
 .service-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .service-text strong { font-size: 0.92rem; font-weight: 600; }
@@ -496,8 +496,10 @@
   .app.is-collapsed #logout span { display: inline; }
   .app.is-collapsed #logout { width: 100%; padding-inline: 12px; }
   .app.nav-open .sidebar { transform: none; }
-  .sidebar-close, .sidebar-open { display: grid; }
-  .sidebar-collapse { display: none; }
+  /* On mobile the topbar three-lines opens the drawer; the sidebar three-lines
+     (inside it) closes it again. */
+  .sidebar-open { display: grid; }
+  .sidebar-collapse { display: grid; }
 }
 
 @media (max-width: 620px) {

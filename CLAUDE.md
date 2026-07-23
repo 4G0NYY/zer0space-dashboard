@@ -75,7 +75,9 @@ static/
 templates/
 ├── base.html      every page extends this
 ├── _macros.html   wordmark, brand mark, tagline, chibi, language toggle
-└── landing / login / register / setup / dashboard / 404 / loading / maintenance
+└── landing / login / register / setup / dashboard / monitoring / 404 / loading / maintenance
+static/vendor/
+└── tabler/        Tabler Icons webfont, vendored (CSP forbids a CDN) — service icons
 scripts/
 └── unlock-user.py  Break-glass account unlock (see docs/security.md)
 docs/

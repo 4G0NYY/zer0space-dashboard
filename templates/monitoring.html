@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+
+{% block title %}Monitoring — Zer0space{% endblock %}
+{% block body_class %}page-monitoring{% endblock %}
+{% block page_css %}
+<link rel="stylesheet" href="/static/vendor/tabler/tabler-icons.min.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/css/dashboard.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/css/monitoring.css?v={{ asset_version }}">
+{% endblock %}
+
+{# A wall display, so no chibi and no starfield distraction — the space backdrop
+   gradient stays, the animated canvas does not pull focus on an always-on screen. #}
+{% block chibi %}{% endblock %}
+
+{% block body %}
+<main class="wall" id="main">
+  <header class="wall-head">
+    <div class="wall-brand">
+      {{ ui.wordmark_static() }}
+      <span class="wall-sep"></span>
+      <span class="wall-heading" data-i18n="mon.title">Monitoring</span>
+    </div>
+
+    <div class="wall-status">
+      <span class="wall-overall" id="wall-overall">
+        <span class="dot dot-live"></span>
+        <span id="wall-overall-text" data-i18n="mon.checking">Prüfe …</span>
+      </span>
+      <span class="wall-clock mono" id="wall-clock">--:--:--</span>
+      <span class="wall-updated faint" id="wall-updated"></span>
+      <button type="button" class="btn-icon" id="wall-fullscreen" data-i18n-aria="mon.fullscreen" aria-label="Vollbild">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/></svg>
+      </button>
+      <a class="btn-icon" href="/dashboard" data-i18n-aria="mon.back" aria-label="Zurück zum Dashboard">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="alert alert-error wall-banner" id="wall-banner" role="alert" hidden></div>
+
+  <section class="wall-tiles" id="wall-tiles"></section>
+
+  <section class="wall-section">
+    <h2 class="wall-label" data-i18n="home.swarmNodes">Swarm-Nodes</h2>
+    <div class="wall-hosts" id="wall-nodes"></div>
+  </section>
+
+  <section class="wall-section" id="wall-extra-section" hidden>
+    <h2 class="wall-label" data-i18n="home.standalone">Standalone-Hosts</h2>
+    <div class="wall-hosts" id="wall-extra"></div>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/monitoring.js?v={{ asset_version }}" defer></script>
+{% endblock %}

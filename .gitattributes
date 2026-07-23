@@ -6,4 +6,10 @@
 *.png binary
 *.jpg binary
 *.webp binary
+# Vendored icon webfont — must never be touched by eol normalisation.
+*.woff2 binary
+*.woff binary
+*.ttf binary
+# The vendored Tabler CSS is generated, not hand-written — keep it out of diffs.
+static/vendor/** linguist-vendored
 package-lock.json -diff linguist-generated
