@@ -181,3 +181,18 @@ MAINTENANCE_MODE = _bool("MAINTENANCE_MODE", False)
 
 GITHUB_URL = os.environ.get("GITHUB_URL", "https://github.com/zer0space-net")
 STATUS_URL = os.environ.get("STATUS_URL", "https://status.zer0space.com")
+
+# --- Crimson gateway --------------------------------------------------------
+# zer0space ✕ Crimson (the Crimson Haven frontend, github.com/crimsonhaven-to)
+# is served at /crimson, gated on the zer0space session and reverse-proxied by
+# this dashboard — the SPA to CRIMSON_CLIENT_URL and its /crimson/api calls to
+# CRIMSON_API_URL. Both must be set for the gateway to mount; when either is
+# unset /crimson simply 404s and the dashboard behaves exactly as before, so
+# this is inert until a deployment opts in.
+CRIMSON_PATH = "/crimson"
+CRIMSON_CLIENT_URL = os.environ.get("CRIMSON_CLIENT_URL", "").rstrip("/") or None
+CRIMSON_API_URL = os.environ.get("CRIMSON_API_URL", "").rstrip("/") or None
+CRIMSON_ENABLED = bool(CRIMSON_CLIENT_URL and CRIMSON_API_URL)
+# Forwarded to the backend as the per-user identity for the SSO bridge (phase 6).
+# Header name the backend trusts for a gateway-authenticated user; empty = off.
+CRIMSON_USER_HEADER = os.environ.get("CRIMSON_USER_HEADER", "X-Zer0space-User")

@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, db, metrics, totp, vault
+from . import auth, config, crimson, db, metrics, totp, vault
 
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
@@ -216,7 +216,17 @@ class CsrfMiddleware:
             return
 
         request = Request(scope)
-        if request.method not in auth.CSRF_SAFE_METHODS and request.url.path not in self.EXEMPT:
+        path = request.url.path
+        # The /crimson gateway is exempt from the dashboard's double-submit CSRF:
+        # the Crimson SPA authenticates to its backend by its own scheme and has
+        # no zer0space CSRF token to echo. Cross-site POSTs are still blocked the
+        # same way the login endpoints are — the session cookie is samesite=strict.
+        is_crimson = path == config.CRIMSON_PATH or path.startswith(config.CRIMSON_PATH + "/")
+        if (
+            request.method not in auth.CSRF_SAFE_METHODS
+            and path not in self.EXEMPT
+            and not is_crimson
+        ):
             session = scope.get("state", {}).get("session")
             if not auth.csrf_ok(session, request.headers.get("x-csrf-token")):
                 response = fail(403, "CSRF_INVALID", "CSRF token invalid or missing")
@@ -387,6 +397,11 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(db.retry_in_background()),
         asyncio.create_task(_housekeeping()),
     ]
+    if config.CRIMSON_ENABLED:
+        print(
+            f"[crimson] gateway on {config.CRIMSON_PATH} "
+            f"(spa={config.CRIMSON_CLIENT_URL}, api={config.CRIMSON_API_URL})"
+        )
     print(f"[dashboard] listening :{config.PORT}")
     try:
         yield
@@ -394,6 +409,7 @@ async def lifespan(app: FastAPI):
         for task in tasks:
             task.cancel()
         await metrics.close()
+        await crimson.close()
         await db.close()
 
 
@@ -416,6 +432,47 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(MaintenanceMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
+
+
+# --- zer0space ✕ Crimson gateway --------------------------------------------
+# Mounted only when both upstreams are configured, so on a normal dashboard
+# /crimson simply 404s and nothing here runs. See src/crimson.py for why it
+# streams and strips the session cookie. Crimson has no login of its own: the
+# zer0space session below is the only door. Registration order matters — the
+# API route is declared before the SPA catch-all so /crimson/api/* wins.
+if config.CRIMSON_ENABLED:
+
+    def _crimson_user(request: Request) -> str | None:
+        session = get_session(request)
+        if not session or not session.get("user_id"):
+            return None
+        return str(session["user_id"])
+
+    @app.api_route(
+        "/crimson/api/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        include_in_schema=False,
+    )
+    async def crimson_api(request: Request, path: str) -> Response:
+        user = _crimson_user(request)
+        if user is None:
+            return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+        return await crimson.proxy(request, config.CRIMSON_API_URL, path, inject_user=user)
+
+    @app.get("/crimson", include_in_schema=False)
+    async def crimson_root(request: Request) -> Response:
+        if _crimson_user(request) is None:
+            return RedirectResponse("/login", status_code=303)
+        return await crimson.proxy(request, config.CRIMSON_CLIENT_URL, "")
+
+    @app.api_route("/crimson/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    async def crimson_spa(request: Request, path: str) -> Response:
+        # A browser deep-link into the SPA; unauthenticated visitors go through
+        # the zer0space front door. The client's own server answers unknown
+        # routes with index.html (SPA fallback).
+        if _crimson_user(request) is None:
+            return RedirectResponse("/login", status_code=303)
+        return await crimson.proxy(request, config.CRIMSON_CLIENT_URL, path)
 
 
 @app.exception_handler(ApiError)
