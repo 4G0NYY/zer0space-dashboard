@@ -249,6 +249,10 @@
     'vault.broken': 'Nicht entschlüsselbar — mit einem anderen Schlüssel gespeichert.',
     'vault.confirmDelete': '„{title}" endgültig löschen?',
 
+    'settings.tabAppearance': 'Darstellung',
+    'settings.tabSecurity': 'Sicherheit',
+    'settings.tabServices': 'Dienste',
+    'settings.tabAdmin': 'Admin',
     'settings.appearance': 'Darstellung',
     'settings.accent': 'Akzentfarbe',
     'settings.custom': 'Eigene Farbe',
@@ -618,6 +622,10 @@
     'vault.broken': 'Cannot be decrypted — stored with a different key.',
     'vault.confirmDelete': 'Delete "{title}" permanently?',
 
+    'settings.tabAppearance': 'Appearance',
+    'settings.tabSecurity': 'Security',
+    'settings.tabServices': 'Services',
+    'settings.tabAdmin': 'Admin',
     'settings.appearance': 'Appearance',
     'settings.accent': 'Accent colour',
     'settings.custom': 'Custom colour',

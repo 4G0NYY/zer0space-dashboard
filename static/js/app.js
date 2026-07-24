@@ -35,6 +35,7 @@
     users: [],
     attempts: [],
     view: 'home',
+    settingsTab: 'appearance',
     vaultFilter: ''
   };
 
@@ -94,6 +95,41 @@
 
     if (name === 'vault' && !state.vault.length) loadVault();
     if (name === 'settings' && state.isAdmin) loadAdmin();
+    if (name === 'settings') setSettingsTab(state.settingsTab);
+  }
+
+  /* --- Settings sub-tabs -------------------------------------------------- */
+
+  var SETTINGS_TAB_KEY = 'zs-settings-tab';
+
+  function setSettingsTab(name) {
+    var tab = document.querySelector('.settings-tab[data-tab="' + name + '"]');
+    // Fall back to the first tab if the requested one is unknown or is an admin
+    // tab a viewer must not land on (e.g. a stale stored preference).
+    if (!tab || (tab.classList.contains('admin-only') && !state.isAdmin)) {
+      name = 'appearance';
+    }
+    state.settingsTab = name;
+    try { localStorage.setItem(SETTINGS_TAB_KEY, name); } catch (e) { /* storage blocked */ }
+
+    document.querySelectorAll('.settings-tab').forEach(function (btn) {
+      var on = btn.dataset.tab === name;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('.tab-pane').forEach(function (pane) {
+      pane.hidden = pane.dataset.pane !== name;
+    });
+  }
+
+  function wireSettingsTabs() {
+    try {
+      var stored = localStorage.getItem(SETTINGS_TAB_KEY);
+      if (stored) state.settingsTab = stored;
+    } catch (e) { /* storage blocked */ }
+    document.querySelectorAll('.settings-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () { setSettingsTab(btn.dataset.tab); });
+    });
   }
 
   function wireNavigation() {
@@ -1064,6 +1100,7 @@
   async function init() {
     cacheElements();
     wireNavigation();
+    wireSettingsTabs();
     wireVault();
     wireSettings();
     wireTwofa();
