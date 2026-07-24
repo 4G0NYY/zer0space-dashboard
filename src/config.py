@@ -20,15 +20,30 @@ from pathlib import Path
 SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/run/secrets"))
 
 
-def read_secret(secret_name: str, env_name: str) -> str | None:
-    """Swarm secret file first, env var second, ``None`` if neither exists."""
+def read_secret_source(secret_name: str, env_name: str) -> tuple[str | None, str | None]:
+    """Resolve a secret and report where it came from.
+
+    Same order as :func:`read_secret` — Swarm secret file first, env var second —
+    but returns ``(value, source)`` where ``source`` is ``"swarm secret"``,
+    ``"env"`` or ``None``. Used where the boot log should state which persistent
+    source a key actually came from, so an operator can confirm at a glance that
+    a restart-surviving key is in effect rather than an ephemeral one.
+    """
     try:
         value = (SECRETS_DIR / secret_name).read_text(encoding="utf-8").strip()
         if value:
-            return value
+            return value, "swarm secret"
     except OSError:
         pass
-    return os.environ.get(env_name) or None
+    env = os.environ.get(env_name)
+    if env:
+        return env, "env"
+    return None, None
+
+
+def read_secret(secret_name: str, env_name: str) -> str | None:
+    """Swarm secret file first, env var second, ``None`` if neither exists."""
+    return read_secret_source(secret_name, env_name)[0]
 
 
 def _bool(name: str, default: bool = False) -> bool:

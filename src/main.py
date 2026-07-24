@@ -286,19 +286,28 @@ async def resolve_session_secret() -> str:
 
 
 async def resolve_totp_key() -> bytes:
-    """Docker secret -> env var -> value in the DB -> freshly generated and stored.
+    """Swarm secret file -> env var -> value in the DB -> freshly generated.
 
     Same fallback chain as :func:`resolve_session_secret`, and deliberately a
     separate secret from it: rotating the session secret (which signs out every
     session) must not also silently re-encrypt-fail every stored TOTP secret.
+
+    A key that arrives from the Swarm secret or an env var is used as-is and is
+    NOT written to the settings table. That write-back is the whole bug this
+    guards against: a stale auto-generated row left over from before the secret
+    existed would otherwise clobber the real, restart-surviving key on the next
+    boot, and every enrolled user's TOTP would stop decrypting. Only a genuinely
+    absent key is generated and stored. The source is logged so an operator can
+    confirm at a glance that the persistent key is in effect.
+
     The resolved material is hashed to exactly 32 bytes for AES-256 regardless
     of what shape it arrived in (a hex secret, or an operator-supplied phrase).
     """
-    material = config.TOTP_ENC_KEY
+    material, source = config.read_secret_source("totp_enc_key", "TOTP_ENC_KEY")
     if not material:
         row = await db.fetchrow("SELECT value FROM settings WHERE key = 'totp_enc_key'")
-        if row:
-            material = row["value"]
+        if row and row["value"]:
+            material, source = row["value"], "database"
     if not material:
         generated = secrets.token_hex(32)
         material = await db.fetchval(
@@ -307,7 +316,8 @@ async def resolve_totp_key() -> bytes:
                 RETURNING value""",
             generated,
         )
-        print("[dashboard] auto-generated TOTP_ENC_KEY stored in DB (persistent across restarts)")
+        source = "auto-generated"
+    print(f"[config] totp_enc_key loaded from: {source}")
     return hashlib.sha256(material.encode("utf-8")).digest()
 
 
