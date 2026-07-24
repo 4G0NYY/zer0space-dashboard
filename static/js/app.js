@@ -47,7 +47,7 @@
     ['tiles', 'node-grid', 'extra-grid', 'extra-block', 'service-grid', 'ai-grid', 'cloud-grid',
      'nodes-caption', 'services-caption', 'view-title', 'greeting', 'banner', 'who-name',
      'who-role', 'vault-list', 'vault-search', 'invite-rows', 'user-rows', 'service-rows',
-     'audit-rows', 'swatches', 'accent-custom', 'accent-value', 'chibi-enabled',
+     'audit-rows', 'audit-summary', 'swatches', 'accent-custom', 'accent-value', 'chibi-enabled',
      'loading-overlay', 'invite-fresh', 'invite-code', 'invite-meta',
      'sidebar-scrim', 'app',
      'twofa-off', 'twofa-on', 'twofa-enable-btn', 'twofa-disable-btn',
@@ -969,15 +969,46 @@
 
   /* --- Admin: audit ------------------------------------------------------ */
 
+  function statChip(value, label, mod) {
+    return '<span class="stat' + (mod ? ' ' + mod : '') + '">' +
+             '<b>' + esc(value) + '</b> ' + esc(label) +
+           '</span>';
+  }
+
+  /* Aggregate read of the fetched window, so an admin gets the "is anyone
+     knocking" answer without scanning every row. Everything is derived from the
+     rows already loaded — no extra request. */
+  function renderAuditSummary(attempts) {
+    var box = el['audit-summary'];
+    if (!box) return;
+    if (!attempts.length) { box.hidden = true; box.innerHTML = ''; return; }
+    var failed = 0, ips = {}, users = {};
+    attempts.forEach(function (row) {
+      if (!row.success) failed += 1;
+      if (row.ip) ips[row.ip] = true;
+      if (row.username) users[row.username] = true;
+    });
+    var chips = [statChip(attempts.length, t('settings.auditEvents'))];
+    if (failed) chips.push(statChip(failed, t('settings.auditFailed'), 'is-fail'));
+    chips.push(statChip(attempts.length - failed, t('settings.auditOk'), 'is-ok'));
+    chips.push(statChip(Object.keys(ips).length, t('settings.auditIps')));
+    chips.push(statChip(Object.keys(users).length, t('settings.auditAccounts')));
+    box.innerHTML = chips.join('');
+    box.hidden = false;
+  }
+
   function renderAudit() {
     if (!el['audit-rows']) return;
+    renderAuditSummary(state.attempts);
     if (!state.attempts.length) {
       el['audit-rows'].innerHTML = '<tr><td colspan="5" class="empty">' + esc(t('settings.noAttempts')) + '</td></tr>';
       return;
     }
     el['audit-rows'].innerHTML = state.attempts.map(function (row) {
+      // Relative time answers "is this happening now?" more directly than a
+      // wall-clock stamp, and stays short; the exact time is on hover.
       return '<tr>' +
-               '<td class="mono">' + esc(UI.dateTime(row.created_at)) + '</td>' +
+               '<td title="' + esc(UI.dateTime(row.created_at)) + '">' + esc(UI.relative(row.created_at)) + '</td>' +
                '<td>' + esc(row.username || '—') + '</td>' +
                '<td class="mono">' + esc(row.ip || '—') + '</td>' +
                '<td>' + esc(row.kind) + '</td>' +

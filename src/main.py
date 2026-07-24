@@ -44,7 +44,7 @@ from . import auth, config, db, metrics, totp, vault
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.2.0"
+ASSET_VERSION = "4.2.1"
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)

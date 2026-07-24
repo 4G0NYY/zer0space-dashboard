@@ -402,6 +402,33 @@
 
 .empty { padding: 26px 14px; text-align: center; color: var(--text-faint); font-size: 0.86rem; }
 
+/* Login-attempts audit: a busy cluster produces enough rows to push the rest of
+   the page far below the fold, so the history scrolls inside a fixed-height box
+   with the column header pinned instead of growing without limit. */
+.audit-scroll { max-height: 340px; overflow-y: auto; }
+.audit-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-3); }
+
+/* Aggregate read of the fetched window — the "is anyone knocking" answer at a
+   glance, before scanning individual rows. */
+.audit-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.audit-summary[hidden] { display: none; }
+.audit-summary .stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.74rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.audit-summary .stat b { font-size: 0.9rem; font-weight: 650; color: var(--text); }
+.audit-summary .stat.is-fail { border-color: color-mix(in srgb, var(--crit) 36%, transparent); }
+.audit-summary .stat.is-fail b { color: var(--crit); }
+.audit-summary .stat.is-ok b { color: var(--ok); }
+
 .row-icon { display: inline-grid; place-items: center; vertical-align: -4px; margin-right: 7px; color: var(--accent); }
 .row-icon:empty { display: none; }
 
