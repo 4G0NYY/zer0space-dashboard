@@ -129,6 +129,7 @@ provoke a restart — or who simply waited for a deploy — got a clean slate.
 | Per IP (login) | 10 failures | 15 min | 30 min |
 | Per username (login) | 5 failures | 10 min | 15 min |
 | Per IP (register) | 3 attempts | 60 min | 60 min |
+| Per username (2FA code) | 5 failures | 5 min | 5 min |
 
 The per-username limit is tighter than the per-IP limit on purpose: a distributed
 guess against one account is exactly the attack the per-IP limit cannot see.
@@ -168,6 +169,80 @@ docker exec -it <dashboard-container> python scripts/unlock-user.py --user siro
 That script deliberately **cannot set a password**. Restoring access to a locked
 account is a different operation from taking one over, and a tool that could do
 both would be the most dangerous file in the repository.
+
+---
+
+## Two-factor authentication (TOTP)
+
+Optional, per user, off by default. Turned on from Settings; nothing about running
+the dashboard requires it.
+
+| Property | Value |
+|---|---|
+| Standard | RFC 6238 (TOTP), via `pyotp` |
+| Secret | 160 bits, `pyotp.random_base32()` |
+| Code | 6 digits, 30-second step, ±1 step tolerated (clock drift) |
+| Setup QR | Rendered server-side (`qrcode` + `Pillow`), returned once as a data URI |
+| Secret at rest | AES-256-GCM, server-wide key — **not** the vault key |
+| Recovery codes | 8, single-use, bcrypt-hashed, shown once at setup |
+
+**The encryption key is deliberately not the vault key.** The vault key exists
+only in an active session, derived from a plaintext password that is never
+stored — which is exactly why it *cannot* be the key protecting `totp_secret`.
+Verifying a 2FA code has to work as the very first thing a signed-out browser
+does, and an admin resetting a lost device's 2FA has to work without ever
+holding that user's password. Both need a key that exists independent of any
+one user's session, so `totp_secret` gets its own server-wide secret
+(`resolve_totp_key`, config key `totp_enc_key`) — same Swarm-secret → env var →
+`settings`-table → auto-generated fallback chain as the session secret, and
+rotating one does not touch the other.
+
+**Login becomes two steps once `users.totp_enabled` is true.** `POST /api/login`
+still checks the password first — same rate limits, same lockout, same timing
+floor as always — but on success it does not open a full session. It opens a
+*pending* one: a real session (so it carries a cookie and a CSRF token) but
+without `user_id` set, which is what every other route actually checks. That
+one missing field is the entire enforcement — there is no separate "is this
+session fully authenticated" flag to keep in sync. The response is
+`202 { requires_2fa: true }`, and the pending session expires after 5 minutes
+regardless of what the client does next.
+
+`POST /api/2fa/login` is the only route reachable with a pending session. It
+verifies the TOTP code (or, if that fails, checks whether the input matches an
+unused recovery code instead — `auth.consume_recovery_code`, which atomically
+marks a code used so two parallel guesses cannot both spend it), then promotes
+the session: a fresh session id (fixation defence, same as the plain login
+path), `user_id` set, and — only now — the vault key derived from the
+plaintext password that has been sitting in the pending session since step one
+(never written anywhere, never sent back to the client, discarded from the
+session the moment it is used).
+
+**Setup is a three-step dance for the same reason invites are single-use:** a
+secret that turns on 2FA has to be *proven* before it counts.
+
+1. `POST /api/2fa/setup` (password required again, even in an authenticated
+   session) generates a secret and holds it **only in the session** — nothing
+   is written to the database yet.
+2. `POST /api/2fa/verify` takes one code. Get it right, and only then does the
+   secret get encrypted and written to `users.totp_secret`, `totp_enabled`
+   flips to `TRUE`, and 8 recovery codes are generated and returned — the one
+   and only time they are ever visible in plaintext.
+3. Abandon the flow at any point and nothing persists — no partial state, no
+   secret an attacker could later complete the setup with.
+
+**Disabling** (`POST /api/2fa/disable`) requires the current password *and* a
+valid code — re-proving both factors to turn either off is the same logic as
+requiring the password again for setup, applied symmetrically.
+
+**Losing the device** is what recovery codes and the admin reset are each for,
+at different levels of self-service:
+
+- A recovery code gets the user back in without anyone else involved.
+- Out of codes too: `POST /api/users/:id/reset-2fa` (admin) clears
+  `totp_secret`/`totp_enabled` and deletes any remaining recovery codes. It does
+  **not** touch the account's password or its vault — 2FA is a separate factor
+  from both, and turning it off for someone is not the same operation as
+  resetting what they know.
 
 ---
 
@@ -302,18 +377,25 @@ Nothing in this repository contains a credential, and nothing should.
 |---|---|---|
 | Database password | `db_password` Swarm secret → `/run/secrets/db_password` | `DB_PASS` env var (development only) |
 | Session signing key | `session_secret` Swarm secret | `SESSION_SECRET` env var, then the `settings` table |
+| TOTP encryption key | `totp_enc_key` Swarm secret | `TOTP_ENC_KEY` env var, then the `settings` table |
 
 Created once on a manager node:
 
 ```bash
 printf '%s' 'THE-DB-PASSWORD' | docker secret create db_password -
 openssl rand -hex 32 | tr -d '\n'  | docker secret create session_secret -
+openssl rand -hex 32 | tr -d '\n'  | docker secret create totp_enc_key -
 ```
 
 Docker secrets are immutable, so rotating one means creating a new secret under a
 new name and updating the reference. Rotating `session_secret` invalidates every
 active session — and since the vault key lives in the session, every vault
-re-locks until its owner signs in again.
+re-locks until its owner signs in again. Rotating `totp_enc_key` is more
+disruptive than it looks: every user with 2FA enabled would fail to decrypt their
+`totp_secret` on the next login attempt, indistinguishable from a wrong code —
+there is no re-encryption path for this key the way there is for a changed
+password, so in practice this key should be treated as close to permanent as
+the database password itself.
 
 The resolution order is **file first, environment second**, never the reverse.
 That is what keeps the compose file free of credentials.

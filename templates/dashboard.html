@@ -225,6 +225,79 @@
             </div>
           </div>
 
+          <div class="panel glass">
+            <header class="panel-head"><h2 data-i18n="twofa.title">Zwei-Faktor-Authentifizierung</h2></header>
+            <div class="panel-body stack gap-14">
+
+              <div id="twofa-off">
+                <p class="faint" data-i18n="twofa.offHint">Zusätzlicher Code aus einer Authenticator-App beim Anmelden.</p>
+                <button type="button" class="btn btn-primary" id="twofa-enable-btn" data-i18n="twofa.enable">2FA aktivieren</button>
+              </div>
+
+              <div id="twofa-on" hidden>
+                <span class="badge badge-ok" data-i18n="twofa.enabledBadge">2FA aktiviert</span>
+                <button type="button" class="btn btn-danger btn-sm" id="twofa-disable-btn" data-i18n="twofa.disable">2FA deaktivieren</button>
+              </div>
+
+              <!-- Step 1: confirm the current password before a setup starts. -->
+              <form id="twofa-password-form" class="stack gap-14" hidden novalidate>
+                <div class="alert alert-error" id="twofa-password-error" role="alert" hidden></div>
+                <div class="field">
+                  <label for="twofa-password" data-i18n="twofa.currentPw">Aktuelles Passwort</label>
+                  <input class="input" type="password" id="twofa-password" autocomplete="current-password">
+                </div>
+                <div class="row gap-10">
+                  <button class="btn btn-primary" type="submit" data-i18n="common.continue">Weiter</button>
+                  <button class="btn btn-ghost" type="button" id="twofa-password-cancel" data-i18n="common.cancel">Abbrechen</button>
+                </div>
+              </form>
+
+              <!-- Step 2: scan the QR, confirm one code. -->
+              <div id="twofa-setup" hidden class="stack gap-14">
+                <p class="faint" data-i18n="twofa.scanHint">Mit einer Authenticator-App scannen (Google Authenticator, Authy, …):</p>
+                <img id="twofa-qr" alt="" width="200" height="200" style="background:#fff;border-radius:10px;padding:10px">
+                <p class="faint" data-i18n="twofa.manualHint">Oder manuell eingeben:</p>
+                <code class="mono" id="twofa-secret"></code>
+                <form id="twofa-verify-form" class="stack gap-14" novalidate>
+                  <div class="alert alert-error" id="twofa-verify-error" role="alert" hidden></div>
+                  <div class="field">
+                    <label for="twofa-verify-code" data-i18n="twofa.enterCode">6-stelliger Code</label>
+                    <input class="input mono" type="text" id="twofa-verify-code" inputmode="numeric" maxlength="6"
+                           autocomplete="one-time-code" placeholder="123456">
+                  </div>
+                  <button class="btn btn-primary" type="submit" data-i18n="twofa.confirm">Bestätigen</button>
+                </form>
+              </div>
+
+              <!-- Step 3: recovery codes, shown exactly once. -->
+              <div id="twofa-recovery" hidden class="stack gap-14">
+                <p class="faint" data-i18n="twofa.recoveryHint">
+                  Wiederherstellungscodes — jeder nur einmal verwendbar. Jetzt sichern, sie werden nicht wieder angezeigt.
+                </p>
+                <div class="mono" id="twofa-recovery-codes" style="line-height:1.9"></div>
+                <button type="button" class="btn btn-primary" id="twofa-recovery-done" data-i18n="twofa.recoveryDone">Gesichert — fertig</button>
+              </div>
+
+              <!-- Disable flow: password + a current code. -->
+              <form id="twofa-disable-form" class="stack gap-14" hidden novalidate>
+                <div class="alert alert-error" id="twofa-disable-error" role="alert" hidden></div>
+                <div class="field">
+                  <label for="twofa-disable-password" data-i18n="twofa.currentPw">Aktuelles Passwort</label>
+                  <input class="input" type="password" id="twofa-disable-password" autocomplete="current-password">
+                </div>
+                <div class="field">
+                  <label for="twofa-disable-code" data-i18n="twofa.enterCode">6-stelliger Code</label>
+                  <input class="input mono" type="text" id="twofa-disable-code" inputmode="numeric" maxlength="6" placeholder="123456">
+                </div>
+                <div class="row gap-10">
+                  <button class="btn btn-danger" type="submit" data-i18n="twofa.disable">2FA deaktivieren</button>
+                  <button class="btn btn-ghost" type="button" id="twofa-disable-cancel" data-i18n="common.cancel">Abbrechen</button>
+                </div>
+              </form>
+
+            </div>
+          </div>
+
           <!-- Admin-only panels. Hidden by app.js for viewers; the API enforces
                the same boundary server-side, so this is convenience, not a gate. -->
           <div class="panel glass admin-only" hidden>
@@ -295,6 +368,7 @@
                       <th data-i18n="common.username">Benutzername</th>
                       <th data-i18n="settings.role">Rolle</th>
                       <th data-i18n="common.status">Status</th>
+                      <th data-i18n="twofa.columnShort">2FA</th>
                       <th class="col-actions"></th>
                     </tr>
                   </thead>

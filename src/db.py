@@ -35,6 +35,7 @@ REQUIRED_TABLES = [
     "vault_entries",
     "invite_codes",
     "login_attempts",
+    "recovery_codes",
 ]
 
 _pool: asyncpg.Pool | None = None
@@ -305,6 +306,19 @@ CREATE INDEX IF NOT EXISTS idx_login_attempts_ip   ON login_attempts(ip, created
 CREATE INDEX IF NOT EXISTS idx_login_attempts_user ON login_attempts(username, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_attempts_time ON login_attempts(created_at DESC);
 
+-- One row per single-use TOTP recovery code, bcrypt-hashed (never plaintext —
+-- these are only ever compared against, never decrypted). At most 8 unused
+-- rows per user, so verifying a code is a cheap linear scan; see auth.py.
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  code_hash  TEXT NOT NULL,
+  used_at    TIMESTAMPTZ DEFAULT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_recovery_codes_user ON recovery_codes(user_id);
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role            TEXT NOT NULL DEFAULT 'viewer';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS theme           TEXT DEFAULT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS vault_salt      TEXT DEFAULT NULL;
@@ -312,6 +326,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFA
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until    TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked          BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- totp_secret is the base32 TOTP seed, AES-256-GCM encrypted at rest with a
+-- server-wide key (see auth.resolve_totp_key) — deliberately NOT the per-user
+-- vault key, since verifying a 2FA code must not require the plaintext password.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret     TEXT DEFAULT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled    BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE login_attempts ADD COLUMN IF NOT EXISTS kind   TEXT NOT NULL DEFAULT 'login';
 ALTER TABLE services ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'general';
 """

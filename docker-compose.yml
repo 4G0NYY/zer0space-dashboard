@@ -50,10 +50,11 @@ services:
       # you need it for is "the database is unreachable".
       - MAINTENANCE_MODE=${MAINTENANCE_MODE:-false}
     secrets:
-      # Read from /run/secrets/<name> by src/db.js and src/server.js, which fall
-      # back to the matching env var only when the file is absent.
+      # Read from /run/secrets/<name> by src/config.py (config.read_secret),
+      # which falls back to the matching env var only when the file is absent.
       - db_password
       - session_secret
+      - totp_enc_key
     volumes:
       # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
       # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
@@ -166,18 +167,26 @@ networks:
   cloudflared_proxy:
     external: true
 
-# Both are `external: true`, so they are created once on a manager node and are
-# never part of this file — a secret defined inline would sit in the repo:
+# All three are `external: true`, so they are created once on a manager node and
+# are never part of this file — a secret defined inline would sit in the repo:
 #
 #   printf 'THE-DB-PASSWORD' | docker secret create db_password -
 #   openssl rand -hex 32 | tr -d '\n' | docker secret create session_secret -
+#   openssl rand -hex 32 | tr -d '\n' | docker secret create totp_enc_key -
 #
-# Rotating either means creating a new secret under a new name and updating the
-# reference: Docker secrets are immutable once created. Rotating session_secret
-# invalidates every active session, so everyone has to sign in again — and since
-# the vault key lives in the session, the vault re-locks until they do.
+# Rotating any of them means creating a new secret under a new name and updating
+# the reference: Docker secrets are immutable once created. Rotating
+# session_secret invalidates every active session, so everyone has to sign in
+# again — and since the vault key lives in the session, the vault re-locks until
+# they do. Rotating totp_enc_key is more disruptive still: every user with 2FA
+# enabled fails to decrypt their totp_secret on their next login attempt,
+# indistinguishable from a wrong code, and there is no re-encryption path for
+# this key the way there is for a changed password. Treat it as close to
+# permanent as the database password itself.
 secrets:
   db_password:
     external: true
   session_secret:
+    external: true
+  totp_enc_key:
     external: true

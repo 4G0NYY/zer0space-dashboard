@@ -49,7 +49,12 @@
      'who-role', 'vault-list', 'vault-search', 'invite-rows', 'user-rows', 'service-rows',
      'audit-rows', 'swatches', 'accent-custom', 'accent-value', 'chibi-enabled',
      'loading-overlay', 'invite-fresh', 'invite-code', 'invite-meta',
-     'sidebar-scrim', 'app'
+     'sidebar-scrim', 'app',
+     'twofa-off', 'twofa-on', 'twofa-enable-btn', 'twofa-disable-btn',
+     'twofa-password-form', 'twofa-password', 'twofa-password-error', 'twofa-password-cancel',
+     'twofa-setup', 'twofa-qr', 'twofa-secret', 'twofa-verify-form', 'twofa-verify-code', 'twofa-verify-error',
+     'twofa-recovery', 'twofa-recovery-codes', 'twofa-recovery-done',
+     'twofa-disable-form', 'twofa-disable-password', 'twofa-disable-code', 'twofa-disable-error', 'twofa-disable-cancel'
     ].forEach(function (id) { el[id] = $(id); });
   }
 
@@ -553,6 +558,108 @@
     }
   }
 
+  /* --- Two-factor authentication ------------------------------------------ */
+
+  function renderTwofaState() {
+    var on = !!(state.me && state.me.totpEnabled);
+    if (el['twofa-off']) el['twofa-off'].hidden = on;
+    if (el['twofa-on']) el['twofa-on'].hidden = !on;
+  }
+
+  function resetTwofaUi() {
+    ['twofa-password-form', 'twofa-setup', 'twofa-recovery', 'twofa-disable-form'].forEach(function (id) {
+      if (el[id]) el[id].hidden = true;
+    });
+    if (el['twofa-password']) el['twofa-password'].value = '';
+    if (el['twofa-verify-code']) el['twofa-verify-code'].value = '';
+    if (el['twofa-disable-password']) el['twofa-disable-password'].value = '';
+    if (el['twofa-disable-code']) el['twofa-disable-code'].value = '';
+  }
+
+  function wireTwofa() {
+    if (el['twofa-enable-btn']) {
+      el['twofa-enable-btn'].addEventListener('click', function () {
+        resetTwofaUi();
+        el['twofa-password-form'].hidden = false;
+        el['twofa-password'].focus();
+      });
+    }
+    if (el['twofa-password-cancel']) {
+      el['twofa-password-cancel'].addEventListener('click', resetTwofaUi);
+    }
+    if (el['twofa-password-form']) {
+      el['twofa-password-form'].addEventListener('submit', async function (event) {
+        event.preventDefault();
+        var errorBox = el['twofa-password-error'];
+        errorBox.hidden = true;
+        try {
+          var data = await API.post('/api/2fa/setup', { password: el['twofa-password'].value });
+          el['twofa-password-form'].hidden = true;
+          el['twofa-setup'].hidden = false;
+          el['twofa-qr'].src = data.qrDataUri;
+          el['twofa-secret'].textContent = data.secret;
+          el['twofa-verify-code'].focus();
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+        }
+      });
+    }
+    if (el['twofa-verify-form']) {
+      el['twofa-verify-form'].addEventListener('submit', async function (event) {
+        event.preventDefault();
+        var errorBox = el['twofa-verify-error'];
+        errorBox.hidden = true;
+        try {
+          var data = await API.post('/api/2fa/verify', { code: el['twofa-verify-code'].value.trim() });
+          el['twofa-setup'].hidden = true;
+          el['twofa-recovery'].hidden = false;
+          el['twofa-recovery-codes'].innerHTML = data.recoveryCodes.map(esc).join('<br>');
+          if (state.me) state.me.totpEnabled = true;
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+          el['twofa-verify-code'].value = '';
+        }
+      });
+    }
+    if (el['twofa-recovery-done']) {
+      el['twofa-recovery-done'].addEventListener('click', function () {
+        resetTwofaUi();
+        renderTwofaState();
+      });
+    }
+    if (el['twofa-disable-btn']) {
+      el['twofa-disable-btn'].addEventListener('click', function () {
+        resetTwofaUi();
+        el['twofa-disable-form'].hidden = false;
+        el['twofa-disable-password'].focus();
+      });
+    }
+    if (el['twofa-disable-cancel']) {
+      el['twofa-disable-cancel'].addEventListener('click', resetTwofaUi);
+    }
+    if (el['twofa-disable-form']) {
+      el['twofa-disable-form'].addEventListener('submit', async function (event) {
+        event.preventDefault();
+        var errorBox = el['twofa-disable-error'];
+        errorBox.hidden = true;
+        try {
+          await API.post('/api/2fa/disable', {
+            password: el['twofa-disable-password'].value,
+            code: el['twofa-disable-code'].value.trim()
+          });
+          if (state.me) state.me.totpEnabled = false;
+          resetTwofaUi();
+          renderTwofaState();
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+        }
+      });
+    }
+  }
+
   /* --- Admin: invites ---------------------------------------------------- */
 
   function renderInvites() {
@@ -660,6 +767,9 @@
       } else if (!isSelf) {
         actions += '<button type="button" class="btn btn-ghost btn-sm" data-user-lock="' + user.id + '">' + esc(t('settings.lock')) + '</button> ';
       }
+      if (user.totp_enabled) {
+        actions += '<button type="button" class="btn btn-ghost btn-sm" data-user-reset2fa="' + user.id + '">' + esc(t('twofa.reset')) + '</button> ';
+      }
       if (!isSelf) {
         var nextRole = user.role === 'admin' ? 'viewer' : 'admin';
         actions += '<button type="button" class="btn btn-ghost btn-sm" data-user-role="' + user.id + '" data-role="' + nextRole + '">→ ' + esc(t('role.' + nextRole)) + '</button> ';
@@ -667,10 +777,15 @@
         actions += '<button type="button" class="btn btn-danger btn-sm" data-user-delete="' + user.id + '" data-name="' + esc(user.username) + '">' + esc(t('common.delete')) + '</button>';
       }
 
+      var twofaHtml = user.totp_enabled
+        ? '<span class="badge badge-ok">' + esc(t('twofa.columnOn')) + '</span>'
+        : '<span class="faint">' + esc(t('twofa.columnOff')) + '</span>';
+
       return '<tr>' +
                '<td>' + esc(user.username) + (isSelf ? ' <span class="faint">(you)</span>' : '') + '</td>' +
                '<td><span class="badge ' + (user.role === 'admin' ? 'badge-accent' : '') + '">' + esc(t('role.' + user.role)) + '</span></td>' +
                '<td>' + statusHtml + '</td>' +
+               '<td>' + twofaHtml + '</td>' +
                '<td class="col-actions">' + actions + '</td>' +
              '</tr>';
     }).join('');
@@ -719,10 +834,16 @@
       var lock = event.target.closest('[data-user-lock]');
       var role = event.target.closest('[data-user-role]');
       var del = event.target.closest('[data-user-delete]');
+      var reset2fa = event.target.closest('[data-user-reset2fa]');
       try {
         if (unlock) { await API.post('/api/users/' + unlock.dataset.userUnlock + '/unlock'); await loadUsers(); }
         else if (lock) { await API.post('/api/users/' + lock.dataset.userLock + '/lock'); await loadUsers(); }
         else if (role) { await API.put('/api/users/' + role.dataset.userRole + '/role', { role: role.dataset.role }); await loadUsers(); }
+        else if (reset2fa) {
+          if (!window.confirm(t('twofa.confirmReset'))) return;
+          await API.post('/api/users/' + reset2fa.dataset.userReset2fa + '/reset-2fa');
+          await loadUsers();
+        }
         else if (del) {
           if (!window.confirm(t('settings.confirmDeleteUser', { name: del.dataset.name }))) return;
           await API.del('/api/users/' + del.dataset.userDelete);
@@ -914,6 +1035,7 @@
     wireNavigation();
     wireVault();
     wireSettings();
+    wireTwofa();
     wireInvites();
     wireUsers();
     wireServiceAdmin();
@@ -940,6 +1062,7 @@
     if (state.me.theme) window.ZS_THEME.save(state.me.theme);
     renderSwatches();
     renderGreeting();
+    renderTwofaState();
 
     await Promise.all([loadOverview(), loadServices()]);
 

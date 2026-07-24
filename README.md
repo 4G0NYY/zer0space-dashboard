@@ -21,7 +21,8 @@
 - **Standalone hosts** — machines that are deliberately *not* Swarm members
   (the database and the storage host) get their own section and their own count
 - **Backup status** — per-node backup results read from shared storage
-- **Accounts** — first-run setup wizard, `admin` / `viewer` roles, invitation codes
+- **Accounts** — first-run setup wizard, `admin` / `viewer` roles, invitation codes,
+  optional per-user TOTP two-factor authentication
 - **Password vault** — per-user AES-256-GCM credentials, keyed from the user's own
   password; the server cannot decrypt them without an active session
 - **German / English** — the whole UI, switchable at any time, on every page
@@ -30,8 +31,8 @@
 ## Tech stack
 
 Python 3.12 · FastAPI / Starlette · uvicorn · PostgreSQL (`asyncpg`, no ORM) ·
-`bcrypt` · `cryptography` · `httpx` · Jinja2 · vanilla JS frontend with
-**no build step**.
+`bcrypt` · `cryptography` · `httpx` · Jinja2 · `pyotp` + `qrcode`/`Pillow` (2FA) ·
+vanilla JS frontend with **no build step**.
 
 > **v4 is a complete rewrite.** The dashboard was a Node.js/Express app through
 > v3. The database, the bcrypt hashes and the vault's encrypted format were all
@@ -96,11 +97,12 @@ The image is built by GitHub Actions on every push to `main` and published to
 `ghcr.io/zer0space-net/zer0space-dashboard:latest`. Deploy `docker-compose.yml`
 as a Swarm stack (Portainer or `docker stack deploy`).
 
-Two Swarm secrets are required. Create them once on a manager node:
+Three Swarm secrets are required. Create them once on a manager node:
 
 ```bash
 printf '%s' 'THE-DB-PASSWORD' | docker secret create db_password -
 openssl rand -hex 32 | tr -d '\n'  | docker secret create session_secret -
+openssl rand -hex 32 | tr -d '\n'  | docker secret create totp_enc_key -
 ```
 
 No credential appears in `docker-compose.yml`, in the repository, or in any
@@ -137,7 +139,7 @@ most likely to change:
 ## Documentation
 
 - [`CLAUDE.md`](CLAUDE.md) — project context, invariants, what breaks easily
-- [`docs/security.md`](docs/security.md) — auth, invites, sessions, vault, secrets
+- [`docs/security.md`](docs/security.md) — auth, invites, 2FA, sessions, vault, secrets
 - [`docs/design.md`](docs/design.md) — the visual language and where the art comes from
 
 ## Operations

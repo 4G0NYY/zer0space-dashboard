@@ -112,6 +112,12 @@ def describe_db_target() -> str:
 
 SESSION_SECRET = read_secret("session_secret", "SESSION_SECRET")
 SESSION_COOKIE = "zs.sid"
+
+# Encrypts users.totp_secret at rest (AES-256-GCM). Same resolution order and
+# same auto-generate-and-persist fallback as SESSION_SECRET — see
+# main.resolve_totp_key(). Deliberately a separate secret from SESSION_SECRET:
+# rotating one must not silently invalidate the other.
+TOTP_ENC_KEY = read_secret("totp_enc_key", "TOTP_ENC_KEY")
 # 24h. The session holds the derived vault key, so this is also the window in
 # which a stolen session cookie could decrypt the vault.
 SESSION_MAX_AGE = _int("SESSION_MAX_AGE", 24 * 60 * 60)

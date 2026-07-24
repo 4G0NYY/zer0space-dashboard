@@ -58,13 +58,32 @@
         </button>
       </form>
 
-      <div class="auth-divider"><span data-i18n="common.or">oder</span></div>
+      {# Step 2, shown only after the password step answers 202 requires_2fa.
+         Hidden rather than a separate page: the card, art panel and language
+         toggle all stay put, only the form swaps. #}
+      <form id="twofa-form" novalidate hidden>
+        <div class="alert alert-error" id="twofa-error" role="alert" hidden></div>
+        <p class="muted" data-i18n="login.twofaSub">Gib den Code aus deiner Authenticator-App ein.</p>
+        <div class="field">
+          <label for="twofa-code" data-i18n="login.twofaLabel">Authenticator-Code</label>
+          <input class="input mono" type="text" id="twofa-code" name="code"
+                 inputmode="numeric" autocomplete="one-time-code" maxlength="12"
+                 data-i18n-ph="login.twofaPh" placeholder="123456"
+                 style="letter-spacing:.2em;text-align:center;font-size:1.2em">
+        </div>
+        <button class="btn btn-primary btn-block" type="submit" id="twofa-submit" data-i18n="login.twofaSubmit">
+          Bestätigen
+        </button>
+        <p class="faint" data-i18n="login.twofaRecoveryHint">Gerät verloren? Ein Wiederherstellungscode funktioniert auch hier.</p>
+      </form>
 
-      <a class="btn btn-ghost btn-block" href="/register" data-i18n="login.registerCta">
+      <div class="auth-divider" id="auth-divider"><span data-i18n="common.or">oder</span></div>
+
+      <a class="btn btn-ghost btn-block" href="/register" id="register-cta" data-i18n="login.registerCta">
         Mit Einladungscode registrieren
       </a>
 
-      <footer class="auth-foot">
+      <footer class="auth-foot" id="auth-foot">
         <span class="faint" data-i18n="login.noAccount">Noch kein Konto?</span>
         <a href="/register" data-i18n="login.askAdmin">Frag einen Admin nach einem Code</a>
       </footer>

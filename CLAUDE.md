@@ -14,8 +14,8 @@ A self-hosted homelab dashboard for the zer0space Docker Swarm cluster:
   agents; plus standalone hosts that are deliberately not Swarm members.
 - **Backup status** — reads the per-node JSON files the node backup script drops
   into the shared storage directory.
-- **User management** — `admin` / `viewer` roles, a first-run setup wizard, and
-  invitation codes.
+- **User management** — `admin` / `viewer` roles, a first-run setup wizard,
+  invitation codes, and optional per-user TOTP two-factor authentication.
 - **Password vault** — per-user encrypted credential storage. This is the part to
   be most careful with.
 
@@ -64,7 +64,8 @@ add non-trivial logic, say so rather than silently assuming it is covered.
 src/
 ├── config.py    Environment + Swarm secrets, resolved once at import
 ├── db.py        asyncpg pool, idempotent schema bootstrap, query helpers
-├── auth.py      Sessions, rate limiting, lockout, CSRF, password policy
+├── auth.py      Sessions, rate limiting, lockout, CSRF, password policy, 2FA policy
+├── totp.py      TOTP secret/QR generation and verification (pyotp + qrcode/Pillow)
 ├── vault.py     PBKDF2 + AES-256-GCM, vault CRUD helpers
 ├── metrics.py   Docker socket proxy + Glances polling, status tiles
 └── main.py      FastAPI app: middleware, routes, lifespan
@@ -250,6 +251,21 @@ accident:
 - An admin-forced password reset **cannot** re-encrypt (the admin never has the
   old plaintext), so it deliberately wipes that user's vault instead of leaving
   rows behind that can never be decrypted. This is intentional, not a bug.
+
+**Two-factor authentication (TOTP)** is optional per user. `users.totp_secret` is
+AES-256-GCM encrypted with a **separate, server-wide key** (`resolve_totp_key` in
+`main.py`, config key `totp_enc_key`) — deliberately not the vault key, since
+verifying a code (or an admin resetting a lost device via
+`POST /api/users/:id/reset-2fa`) must work without the user's plaintext password.
+Login becomes two steps once it is enabled: `POST /api/login` opens a *pending*
+session (no `user_id` — that is the entire enforcement boundary, checked by the
+same `_require_session` every other route already goes through) and answers
+`202 { requires_2fa: true }`; `POST /api/2fa/login` is the only route reachable
+with one, and is the one place that promotes a pending session into a full one.
+Recovery codes are bcrypt-hashed and single-use, same pattern as everything else
+in `auth.py` that must be verified but never reversed. Read the "Two-factor
+authentication" section in `docs/security.md` before changing any of this — the
+session-boundary trick in particular is easy to weaken by accident.
 
 Other invariants:
 

@@ -28,6 +28,7 @@ translation degrades gracefully instead of rendering blank.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -38,7 +39,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, db, metrics, vault
+from . import auth, config, db, metrics, totp, vault
 
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
@@ -49,6 +50,10 @@ templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)
 # Filled during startup — see resolve_session_secret() and auth.SecretHolder.
 session_secret = auth.SecretHolder()
+# Encrypts users.totp_secret at rest — filled during startup, see
+# resolve_totp_key() below. A plain module global rather than a SecretHolder:
+# unlike the session secret, nothing needs it before the lifespan handler runs.
+totp_key: bytes = b""
 
 
 # --- Helpers ----------------------------------------------------------------
@@ -280,6 +285,32 @@ async def resolve_session_secret() -> str:
     return stored
 
 
+async def resolve_totp_key() -> bytes:
+    """Docker secret -> env var -> value in the DB -> freshly generated and stored.
+
+    Same fallback chain as :func:`resolve_session_secret`, and deliberately a
+    separate secret from it: rotating the session secret (which signs out every
+    session) must not also silently re-encrypt-fail every stored TOTP secret.
+    The resolved material is hashed to exactly 32 bytes for AES-256 regardless
+    of what shape it arrived in (a hex secret, or an operator-supplied phrase).
+    """
+    material = config.TOTP_ENC_KEY
+    if not material:
+        row = await db.fetchrow("SELECT value FROM settings WHERE key = 'totp_enc_key'")
+        if row:
+            material = row["value"]
+    if not material:
+        generated = secrets.token_hex(32)
+        material = await db.fetchval(
+            """INSERT INTO settings (key, value) VALUES ('totp_enc_key', $1)
+                ON CONFLICT (key) DO UPDATE SET value = settings.value
+                RETURNING value""",
+            generated,
+        )
+        print("[dashboard] auto-generated TOTP_ENC_KEY stored in DB (persistent across restarts)")
+    return hashlib.sha256(material.encode("utf-8")).digest()
+
+
 async def _housekeeping() -> None:
     """Daily attempt-log prune and hourly session sweep, for the process lifetime."""
     last_prune = 0.0
@@ -303,16 +334,26 @@ async def lifespan(app: FastAPI):
 
     connected = await db.connect()
     secret: str | None = None
+    global totp_key
     if connected:
         try:
             await db.init_schema()
             secret = await resolve_session_secret()
+            totp_key = await resolve_totp_key()
             await auth.prune_login_attempts()
             if await no_users_yet():
                 print("[dashboard] no accounts yet — the setup wizard is open at /setup")
             print("[dashboard] database ready (schema verified)")
         except Exception as err:  # noqa: BLE001
             print(f"[dashboard] database setup failed: {err}")
+
+    if not totp_key:
+        # Same reasoning as the ephemeral session secret below: boot anyway so
+        # the rest of the app works, but 2FA secrets encrypted with this key
+        # will not decrypt after a restart until the database is back and the
+        # real key is resolved — which only matters for the (rare) case of a
+        # user completing 2FA setup while PostgreSQL is unreachable.
+        totp_key = hashlib.sha256(secrets.token_bytes(32)).digest()
 
     if not secret:
         secret = config.SESSION_SECRET or secrets.token_hex(32)
@@ -601,6 +642,26 @@ async def api_login(request: Request) -> Response:
     await auth.record_attempt(username=username, ip=ip, success=True)
     await auth.clear_failed_logins(user["id"])
 
+    store: auth.SessionStore = request.scope["state"]["session_store"]
+    existing = get_session(request)
+    session = store.regenerate(existing) if existing else store.create()
+    session.data.clear()
+
+    if user["totp_enabled"]:
+        # Step 1 of 2 passed. Deliberately NOT setting user_id here:
+        # _require_session (and therefore every other /api/* route) keys off
+        # it, so this pending session cannot reach anything but
+        # /api/2fa/login. The vault key is likewise not derived yet — that
+        # only happens once the second factor succeeds, below.
+        session["pending_2fa_user_id"] = user["id"]
+        session["pending_2fa_username"] = user["username"]
+        session["pending_2fa_password"] = password  # kept only until /api/2fa/login succeeds
+        session["pending_2fa_expires"] = time.time() + 5 * 60
+        auth.issue_csrf_token(session)
+        request.scope["state"]["session"] = session
+        request.scope["state"]["session_changed"] = True
+        return JSONResponse({"requires_2fa": True, "csrfToken": session["csrf_token"]}, status_code=202)
+
     # Derive this user's vault key from their plaintext password — available
     # only here, before it goes out of scope — plus their PBKDF2 salt. The key
     # lives ONLY in the server-side session and is never written to the DB.
@@ -610,10 +671,6 @@ async def api_login(request: Request) -> Response:
         await db.execute("UPDATE users SET vault_salt = $1 WHERE id = $2", vault_salt, user["id"])
     vault_key = await vault.derive_vault_key(password, vault_salt)
 
-    store: auth.SessionStore = request.scope["state"]["session_store"]
-    existing = get_session(request)
-    session = store.regenerate(existing) if existing else store.create()
-    session.data.clear()
     session["user_id"] = user["id"]
     session["username"] = user["username"]
     session["role"] = user["role"] or "viewer"
@@ -624,6 +681,75 @@ async def api_login(request: Request) -> Response:
     request.scope["state"]["session_changed"] = True
 
     return JSONResponse({"ok": True, "role": session["role"]})
+
+
+@app.post("/api/2fa/login")
+async def api_2fa_login(request: Request) -> Response:
+    """Step 2 of the 2FA login flow.
+
+    Reachable with only a *pending* session (no ``user_id``), which is exactly
+    what keeps every other authenticated route closed to it — see the comment
+    in ``api_login`` above. NOT in ``CsrfMiddleware.EXEMPT``: unlike the three
+    truly anonymous endpoints, a session (and therefore a CSRF token) already
+    exists by this point, so there is no reason to exempt it.
+    """
+    _require_db()
+    session = get_session(request)
+    pending_id = session.get("pending_2fa_user_id") if session else None
+    if not session or not pending_id or time.time() > (session.get("pending_2fa_expires") or 0):
+        return fail(401, "TWOFA_SESSION_EXPIRED", "Session expired — please log in again")
+
+    pending_username = session.get("pending_2fa_username") or ""
+    blocked = await auth.check_2fa_rate_limit(pending_username)
+    if blocked:
+        return fail(
+            429,
+            "RATE_LIMITED",
+            "Too many attempts. Try again later.",
+            retryAfterMinutes=max(1, round(blocked / 60)),
+        )
+
+    body = await json_body(request)
+    code = body.get("code")
+    if not isinstance(code, str) or not code.strip():
+        return fail(400, "INPUT_MISSING", "Input missing")
+
+    user = await db.fetchrow("SELECT * FROM users WHERE id = $1", pending_id)
+    if not user or not user["totp_enabled"]:
+        return fail(401, "TWOFA_SESSION_EXPIRED", "Session expired — please log in again")
+
+    ip = auth.client_ip(request)
+    secret = vault.decrypt_field(user["totp_secret"], totp_key) if user["totp_secret"] else None
+    valid_code = bool(secret) and totp.verify_code(secret, code)
+    valid_recovery = False if valid_code else await auth.consume_recovery_code(user["id"], code)
+
+    if not valid_code and not valid_recovery:
+        await auth.record_attempt(username=pending_username, ip=ip, success=False, kind="2fa")
+        return fail(401, "TWOFA_INVALID", "Invalid code")
+    await auth.record_attempt(username=pending_username, ip=ip, success=True, kind="2fa")
+
+    password = session.pop("pending_2fa_password", None)
+    vault_salt = user["vault_salt"]
+    if not vault_salt:
+        vault_salt = vault.new_salt()
+        await db.execute("UPDATE users SET vault_salt = $1 WHERE id = $2", vault_salt, user["id"])
+    vault_key = await vault.derive_vault_key(password, vault_salt)
+
+    # Same session-fixation guard as the password-only path: a fresh sid, not
+    # a reuse of the pending one.
+    store: auth.SessionStore = request.scope["state"]["session_store"]
+    session = store.regenerate(session)
+    session.data.clear()
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["role"] = user["role"] or "viewer"
+    session["vault_key"] = vault_key
+    auth.issue_csrf_token(session)
+
+    request.scope["state"]["session"] = session
+    request.scope["state"]["session_changed"] = True
+
+    return JSONResponse({"ok": True, "role": session["role"], "usedRecoveryCode": valid_recovery})
 
 
 @app.post("/api/logout")
@@ -717,7 +843,7 @@ async def api_me(request: Request) -> Response:
     session = _require_session(request)
     _require_db()
     user = await db.fetchrow(
-        "SELECT username, role, theme FROM users WHERE id = $1", session["user_id"]
+        "SELECT username, role, theme, totp_enabled FROM users WHERE id = $1", session["user_id"]
     )
     return JSONResponse(
         {
@@ -726,6 +852,7 @@ async def api_me(request: Request) -> Response:
             "theme": user["theme"] if user else None,
             "csrfToken": session.get("csrf_token"),
             "vaultUnlocked": bool(session.get("vault_key")),
+            "totpEnabled": bool(user["totp_enabled"]) if user else False,
         }
     )
 
@@ -769,6 +896,116 @@ async def api_change_password(request: Request) -> Response:
     # Only swap the in-session key after the transaction committed.
     if new_key:
         session["vault_key"] = new_key
+    return JSONResponse({"ok": True})
+
+
+# --- 2FA (TOTP) — setup / verify / disable -----------------------------------
+#
+# All three re-check the current password even though the session is already
+# authenticated: turning a second factor on or off is sensitive enough to
+# re-confirm identity, which also covers a hijacked-but-unlocked browser tab.
+
+
+@app.post("/api/2fa/setup")
+async def api_2fa_setup(request: Request) -> Response:
+    session = _require_session(request)
+    _require_db()
+    body = await json_body(request)
+    password = body.get("password")
+    if not isinstance(password, str) or not password:
+        return fail(400, "PW_REQUIRED", "Current password required")
+
+    user = await db.fetchrow("SELECT * FROM users WHERE id = $1", session["user_id"])
+    if not user or not await auth.verify_password(password, user["hash"]):
+        return fail(401, "PW_CURRENT_WRONG", "Current password is wrong")
+    if user["totp_enabled"]:
+        return fail(409, "TWOFA_ALREADY_ENABLED", "2FA is already enabled")
+
+    # Held in the session only until /api/2fa/verify proves the user actually
+    # scanned it — NOT written to the DB yet, so an abandoned setup leaves no
+    # trace and can simply be started over.
+    secret = totp.generate_secret()
+    session["pending_totp_secret"] = secret
+    uri = totp.provisioning_uri(secret, user["username"])
+    return JSONResponse({"secret": secret, "qrDataUri": totp.qr_data_uri(uri)})
+
+
+@app.post("/api/2fa/verify")
+async def api_2fa_verify(request: Request) -> Response:
+    session = _require_session(request)
+    _require_db()
+    secret = session.get("pending_totp_secret")
+    if not secret:
+        return fail(409, "TWOFA_NO_SETUP", "No 2FA setup in progress")
+
+    blocked = await auth.check_2fa_rate_limit(session.get("username") or "")
+    if blocked:
+        return fail(
+            429,
+            "RATE_LIMITED",
+            "Too many attempts. Try again later.",
+            retryAfterMinutes=max(1, round(blocked / 60)),
+        )
+
+    body = await json_body(request)
+    code = body.get("code")
+    ip = auth.client_ip(request)
+    if not totp.verify_code(secret, code if isinstance(code, str) else ""):
+        await auth.record_attempt(username=session.get("username") or "", ip=ip, success=False, kind="2fa")
+        return fail(401, "TWOFA_INVALID", "Invalid code")
+    await auth.record_attempt(username=session.get("username") or "", ip=ip, success=True, kind="2fa")
+
+    recovery_codes = auth.generate_recovery_codes()
+    await db.execute(
+        "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE id = $2",
+        vault.encrypt_field(secret, totp_key),
+        session["user_id"],
+    )
+    await auth.store_recovery_codes(session["user_id"], recovery_codes)
+    session.pop("pending_totp_secret", None)
+
+    # recoveryCodes is returned exactly once, in this response — no route can
+    # ever retrieve them again; only their bcrypt hashes are stored.
+    return JSONResponse({"ok": True, "recoveryCodes": recovery_codes})
+
+
+@app.post("/api/2fa/disable")
+async def api_2fa_disable(request: Request) -> Response:
+    session = _require_session(request)
+    _require_db()
+    body = await json_body(request)
+    password = body.get("password")
+    code = body.get("code")
+    if not isinstance(password, str) or not password or not isinstance(code, str) or not code:
+        return fail(400, "FIELDS_MISSING", "Password and code required")
+
+    user = await db.fetchrow("SELECT * FROM users WHERE id = $1", session["user_id"])
+    if not user or not await auth.verify_password(password, user["hash"]):
+        return fail(401, "PW_CURRENT_WRONG", "Current password is wrong")
+    if not user["totp_enabled"]:
+        return fail(409, "TWOFA_NOT_ENABLED", "2FA is not enabled")
+
+    blocked = await auth.check_2fa_rate_limit(user["username"])
+    if blocked:
+        return fail(
+            429,
+            "RATE_LIMITED",
+            "Too many attempts. Try again later.",
+            retryAfterMinutes=max(1, round(blocked / 60)),
+        )
+
+    ip = auth.client_ip(request)
+    secret = vault.decrypt_field(user["totp_secret"], totp_key) if user["totp_secret"] else None
+    if not secret or not totp.verify_code(secret, code):
+        await auth.record_attempt(username=user["username"], ip=ip, success=False, kind="2fa")
+        return fail(401, "TWOFA_INVALID", "Invalid code")
+    await auth.record_attempt(username=user["username"], ip=ip, success=True, kind="2fa")
+
+    async with db.transaction() as con:
+        await con.execute(
+            "UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1", session["user_id"]
+        )
+        await con.execute("DELETE FROM recovery_codes WHERE user_id = $1", session["user_id"])
     return JSONResponse({"ok": True})
 
 
@@ -1174,7 +1411,7 @@ async def api_list_users(request: Request) -> Response:
     _require_admin(request)
     _require_db()
     rows = await db.fetch(
-        """SELECT id, username, role, failed_attempts, locked, created_at,
+        """SELECT id, username, role, failed_attempts, locked, totp_enabled, created_at,
                   CASE WHEN locked_until > NOW() THEN locked_until ELSE NULL END AS locked_until
              FROM users ORDER BY id"""
     )
@@ -1200,6 +1437,26 @@ async def api_unlock_user(request: Request, user_id: str) -> Response:
     )
     if result.endswith(" 0"):
         return fail(404, "USER_NOT_FOUND", "User not found")
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/users/{user_id}/reset-2fa")
+async def api_reset_2fa(request: Request, user_id: str) -> Response:
+    """For when the user loses their authenticator device.
+
+    Drops the encrypted secret and every recovery code; the user re-enrols from
+    scratch via /api/2fa/setup next time they sign in. 2FA is optional per user,
+    so this does not lock them out of the account — it just turns TOTP back off.
+    """
+    _require_admin(request)
+    _require_db()
+    uid = _path_id(user_id)
+    async with db.transaction() as con:
+        exists = await con.fetchval("SELECT id FROM users WHERE id = $1", uid)
+        if not exists:
+            return fail(404, "USER_NOT_FOUND", "User not found")
+        await con.execute("UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1", uid)
+        await con.execute("DELETE FROM recovery_codes WHERE user_id = $1", uid)
     return JSONResponse({"ok": True})
 
 
@@ -1300,11 +1557,13 @@ async def api_delete_user(request: Request, user_id: str) -> Response:
             admins = await con.fetchval("SELECT COUNT(*)::int FROM users WHERE role = 'admin'")
             if admins <= 1:
                 return fail(400, "LAST_ADMIN_DELETE", "The last admin cannot be deleted")
-        # Explicit cleanup before the user row goes: vault_entries and
-        # invite_codes both reference users(id). The invite rows are kept but
-        # detached — they are the record of how accounts were created, and
-        # losing that on a user deletion would punch a hole in the audit trail.
+        # Explicit cleanup before the user row goes: vault_entries,
+        # recovery_codes and invite_codes all reference users(id). The invite
+        # rows are kept but detached — they are the record of how accounts
+        # were created, and losing that on a user deletion would punch a hole
+        # in the audit trail.
         await con.execute("DELETE FROM vault_entries WHERE user_id = $1", uid)
+        await con.execute("DELETE FROM recovery_codes WHERE user_id = $1", uid)
         await con.execute("UPDATE invite_codes SET created_by = NULL WHERE created_by = $1", uid)
         await con.execute("UPDATE invite_codes SET used_by = NULL WHERE used_by = $1", uid)
         await con.execute("DELETE FROM users WHERE id = $1", uid)

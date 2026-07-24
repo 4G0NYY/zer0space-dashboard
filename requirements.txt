@@ -15,3 +15,10 @@ cryptography==44.0.0
 httpx==0.28.1
 itsdangerous==2.2.0
 jinja2==3.1.5
+
+# TOTP 2FA: pyotp generates/verifies codes, qrcode + Pillow render the setup QR
+# as a PNG. All three are pure Python or ship musllinux wheels, so this stays
+# compatible with the compiler-free Alpine image (see the note above).
+pyotp==2.9.0
+qrcode==7.4.2
+pillow==11.1.0

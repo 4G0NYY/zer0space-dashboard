@@ -61,6 +61,10 @@ LIMITS = {
     # Per source IP: 3 registration attempts an hour. Invalid invite codes count,
     # so the 128-bit code space cannot be searched from one address.
     "register": Limit(max=3, window=60 * 60, block=60 * 60),
+    # Per username: 5 wrong 2FA codes in 5 min -> 5 min block. A 6-digit TOTP
+    # code is only ~20 bits of entropy per guess (unlike a password), so this
+    # window is intentionally tighter than the main login limit above.
+    "2fa": Limit(max=5, window=5 * 60, block=5 * 60),
 }
 
 # Invitations one admin may mint per hour. Not a brute-force defence — an admin
@@ -124,6 +128,84 @@ async def hash_password(password: str) -> str:
 
 async def verify_password(password: str, hashed: str | None) -> bool:
     return await to_thread.run_sync(_verify_sync, password, hashed)
+
+
+# --- 2FA recovery codes ------------------------------------------------------
+#
+# 8 single-use codes generated once at 2FA setup and shown exactly once.
+# bcrypt-hashed like a password (never plaintext, never reversible) but at a
+# lower cost: they are high-entropy CSPRNG tokens rather than user-memorised
+# secrets, and up to 8 of them must be scanned per verification attempt.
+RECOVERY_CODE_COST = 10
+RECOVERY_CODE_COUNT = 8
+
+
+def _generate_recovery_codes_sync() -> list[str]:
+    codes = []
+    for _ in range(RECOVERY_CODE_COUNT):
+        raw = secrets.token_hex(5).upper()  # 10 hex chars
+        codes.append(f"{raw[:5]}-{raw[5:]}")
+    return codes
+
+
+def generate_recovery_codes() -> list[str]:
+    return _generate_recovery_codes_sync()
+
+
+def _hash_recovery_code_sync(code: str) -> str:
+    return bcrypt.hashpw(code.encode("utf-8"), bcrypt.gensalt(RECOVERY_CODE_COST)).decode()
+
+
+async def hash_recovery_code(code: str) -> str:
+    return await to_thread.run_sync(_hash_recovery_code_sync, code)
+
+
+def _verify_recovery_code_sync(code: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(code.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+async def verify_recovery_code(code: str, hashed: str) -> bool:
+    return await to_thread.run_sync(_verify_recovery_code_sync, code, hashed)
+
+
+def normalize_recovery_code(code: str) -> str:
+    return code.strip().upper()
+
+
+async def store_recovery_codes(user_id: int, codes: list[str]) -> None:
+    """Replaces every recovery code for this user with a freshly generated set."""
+    async with db.transaction() as con:
+        await con.execute("DELETE FROM recovery_codes WHERE user_id = $1", user_id)
+        for code in codes:
+            await con.execute(
+                "INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1, $2)",
+                user_id,
+                await hash_recovery_code(code),
+            )
+
+
+async def consume_recovery_code(user_id: int, code: str) -> bool:
+    """Marks one matching, unused recovery code as used. Returns whether one matched.
+
+    Each code is bcrypt-hashed with its own salt, so lookup cannot be indexed —
+    at most 8 unused rows per user, so a linear scan is cheap enough. The
+    ``UPDATE ... WHERE used_at IS NULL`` makes "mark used" atomic: two parallel
+    requests racing the same code cannot both consume it.
+    """
+    normalized = normalize_recovery_code(code)
+    rows = await db.fetch(
+        "SELECT id, code_hash FROM recovery_codes WHERE user_id = $1 AND used_at IS NULL", user_id
+    )
+    for row in rows:
+        if await verify_recovery_code(normalized, row["code_hash"]):
+            result = await db.execute(
+                "UPDATE recovery_codes SET used_at = NOW() WHERE id = $1 AND used_at IS NULL", row["id"]
+            )
+            return not result.endswith(" 0")
+    return False
 
 
 async def pad_timing(started_at: float, minimum: float = LOGIN_MIN_SECONDS) -> None:
@@ -216,6 +298,10 @@ async def check_login_rate_limit(ip: str, username: str) -> float | None:
 
 async def check_register_rate_limit(ip: str) -> float | None:
     return await _is_blocked("ip", ip, LIMITS["register"], kind="register")
+
+
+async def check_2fa_rate_limit(username: str) -> float | None:
+    return await _is_blocked("username", (username or "").lower(), LIMITS["2fa"], kind="2fa")
 
 
 async def check_invite_quota(user_id: int) -> int | None:
