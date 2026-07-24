@@ -94,7 +94,12 @@ _HOP_BY_HOP = {
 }
 
 
-def _forward_request_headers(request: Request, inject_user: str | None) -> dict[str, str]:
+def build_request_headers(
+    request: Request,
+    *,
+    bearer: str | None = None,
+    inject_user: str | None = None,
+) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, value in request.headers.items():
         lk = key.lower()
@@ -108,8 +113,14 @@ def _forward_request_headers(request: Request, inject_user: str | None) -> dict[
         # without having to re-encode.
         if lk == "accept-encoding":
             continue
+        # The gateway supplies the Crimson identity (SSO) — never let the client's
+        # own Authorization override it.
+        if lk == "authorization" and bearer:
+            continue
         out[key] = value
-    if inject_user:
+    if bearer:
+        out["Authorization"] = f"Bearer {bearer}"
+    elif inject_user:
         out[config.CRIMSON_USER_HEADER] = inject_user
     return out
 
@@ -126,27 +137,36 @@ def _response_headers(upstream: httpx.Response) -> dict[str, str]:
     return out
 
 
-async def proxy(
-    request: Request,
-    base_url: str,
-    subpath: str,
-    *,
-    inject_user: str | None = None,
-) -> StreamingResponse:
-    """Forward ``request`` to ``base_url``/``subpath`` and stream the reply back."""
+def _target(base_url: str, subpath: str, request: Request) -> str:
     target = f"{base_url}/{subpath.lstrip('/')}"
     if request.url.query:
         target = f"{target}?{request.url.query}"
+    return target
 
-    body = await request.body()
+
+async def open_upstream(
+    request: Request,
+    base_url: str,
+    subpath: str,
+    body: bytes,
+    headers: dict[str, str],
+) -> httpx.Response:
+    """Send the forwarded request and return the still-open streamed response.
+
+    The caller must either build a StreamingResponse from it via
+    ``stream_response`` or ``aclose`` it (e.g. to retry) — exposed separately so
+    the SSO path can inspect the status code before committing to the stream.
+    """
     upstream_req = client().build_request(
         request.method,
-        target,
-        headers=_forward_request_headers(request, inject_user),
+        _target(base_url, subpath, request),
+        headers=headers,
         content=body if body else None,
     )
-    upstream = await client().send(upstream_req, stream=True)
+    return await client().send(upstream_req, stream=True)
 
+
+def stream_response(upstream: httpx.Response) -> StreamingResponse:
     async def stream() -> AsyncIterator[bytes]:
         try:
             async for chunk in upstream.aiter_bytes():
@@ -159,3 +179,18 @@ async def proxy(
         status_code=upstream.status_code,
         headers=_response_headers(upstream),
     )
+
+
+async def proxy(
+    request: Request,
+    base_url: str,
+    subpath: str,
+    *,
+    bearer: str | None = None,
+    inject_user: str | None = None,
+) -> StreamingResponse:
+    """Forward ``request`` to ``base_url``/``subpath`` and stream the reply back."""
+    body = await request.body()
+    headers = build_request_headers(request, bearer=bearer, inject_user=inject_user)
+    upstream = await open_upstream(request, base_url, subpath, body, headers)
+    return stream_response(upstream)

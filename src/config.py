@@ -196,3 +196,18 @@ CRIMSON_ENABLED = bool(CRIMSON_CLIENT_URL and CRIMSON_API_URL)
 # Forwarded to the backend as the per-user identity for the SSO bridge (phase 6).
 # Header name the backend trusts for a gateway-authenticated user; empty = off.
 CRIMSON_USER_HEADER = os.environ.get("CRIMSON_USER_HEADER", "X-Zer0space-User")
+
+# --- Crimson SSO broker -----------------------------------------------------
+# Gives each zer0space user a real, persistent Crimson account so /account/*
+# (favorites, progress, continue-watching) syncs across devices — without any
+# Crimson login screen. The dashboard derives a deterministic Ed25519 key per
+# user from this secret (Crimson auth is challenge/signature, so the server only
+# ever sees the public key), registers/logs the account in on the backend, and
+# injects the returned Bearer when proxying /crimson/api.
+#
+# Off unless the secret AND an invite code are set — then /crimson still works,
+# just without per-user accounts. The invite code must be one the backend's
+# SIGNUP_INVITE_CODE accepts (needed once per user, at first sign-in).
+CRIMSON_SSO_SECRET = read_secret("crimson_sso_secret", "CRIMSON_SSO_SECRET")
+CRIMSON_SSO_INVITE_CODE = os.environ.get("CRIMSON_SSO_INVITE_CODE", "") or None
+CRIMSON_SSO_ENABLED = bool(CRIMSON_ENABLED and CRIMSON_SSO_SECRET and CRIMSON_SSO_INVITE_CODE)

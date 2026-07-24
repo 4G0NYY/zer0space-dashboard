@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, crimson, db, metrics, totp, vault
+from . import auth, config, crimson, crimson_sso, db, metrics, totp, vault
 
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
@@ -398,9 +398,10 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_housekeeping()),
     ]
     if config.CRIMSON_ENABLED:
+        sso = "on" if config.CRIMSON_SSO_ENABLED else "off"
         print(
             f"[crimson] gateway on {config.CRIMSON_PATH} "
-            f"(spa={config.CRIMSON_CLIENT_URL}, api={config.CRIMSON_API_URL})"
+            f"(spa={config.CRIMSON_CLIENT_URL}, api={config.CRIMSON_API_URL}, sso={sso})"
         )
     print(f"[dashboard] listening :{config.PORT}")
     try:
@@ -457,6 +458,32 @@ if config.CRIMSON_ENABLED:
         user = _crimson_user(request)
         if user is None:
             return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+
+        # With the SSO broker on, mint/inject this user's Crimson Bearer so
+        # /account/* is per-user. If the upstream rejects a cached token, drop it
+        # and re-login once. An SSO failure falls through to an unauthenticated
+        # proxy rather than 500-ing — browse/play keep working, only per-user
+        # account data is unavailable.
+        if config.CRIMSON_SSO_ENABLED:
+            try:
+                body = await request.body()
+                for attempt in (0, 1):
+                    bearer = await crimson_sso.token(user)
+                    headers = crimson.build_request_headers(request, bearer=bearer)
+                    upstream = await crimson.open_upstream(
+                        request, config.CRIMSON_API_URL, path, body, headers
+                    )
+                    if upstream.status_code == 401 and attempt == 0:
+                        await upstream.aclose()
+                        crimson_sso.invalidate(user)
+                        continue
+                    return crimson.stream_response(upstream)
+            except Exception as err:  # noqa: BLE001
+                print(f"[crimson] SSO auth failed for zer0space user {user}: {err!r}")
+                # fall through to the unauthenticated proxy below
+
+        # SSO off: no per-user accounts, but browse/play still work. Pass the user
+        # id as a hint header in case the backend is configured to trust it.
         return await crimson.proxy(request, config.CRIMSON_API_URL, path, inject_user=user)
 
     @app.get("/crimson", include_in_schema=False)
