@@ -29,9 +29,26 @@ from typing import AsyncIterator
 
 import httpx
 from fastapi import Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import config
+
+
+def bad_gateway(err: Exception) -> JSONResponse:
+    """Clean 502 when a Crimson upstream can't be reached, instead of a bare 500.
+
+    The usual cause is the crimson-backend / crimson-client stack not being up
+    (or the overlay between nodes being unreachable). Logged so it's diagnosable.
+    """
+    print(f"[crimson] upstream unreachable: {err!r}")
+    return JSONResponse(
+        {
+            "error": "Crimson is temporarily unreachable — the backend or client "
+            "service may still be starting.",
+            "code": "CRIMSON_UNREACHABLE",
+        },
+        status_code=502,
+    )
 
 _client: httpx.AsyncClient | None = None
 
@@ -188,9 +205,12 @@ async def proxy(
     *,
     bearer: str | None = None,
     inject_user: str | None = None,
-) -> StreamingResponse:
+) -> Response:
     """Forward ``request`` to ``base_url``/``subpath`` and stream the reply back."""
     body = await request.body()
     headers = build_request_headers(request, bearer=bearer, inject_user=inject_user)
-    upstream = await open_upstream(request, base_url, subpath, body, headers)
+    try:
+        upstream = await open_upstream(request, base_url, subpath, body, headers)
+    except httpx.RequestError as err:
+        return bad_gateway(err)
     return stream_response(upstream)
