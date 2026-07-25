@@ -44,7 +44,7 @@ from . import auth, config, crimson, crimson_sso, db, metrics, totp, vault
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.2.2"
+ASSET_VERSION = "4.2.3"
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)
@@ -135,6 +135,8 @@ def page(request: Request, name: str, **context: Any) -> Response:
             "asset_version": ASSET_VERSION,
             "github_url": config.GITHUB_URL,
             "status_url": config.STATUS_URL,
+            # Show the Crimson entry in the sidebar only when the gateway is wired.
+            "crimson_enabled": config.CRIMSON_ENABLED,
             **context,
         },
     )

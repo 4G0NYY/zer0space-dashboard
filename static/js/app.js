@@ -134,6 +134,9 @@
 
   function wireNavigation() {
     document.querySelectorAll('.nav-item').forEach(function (item) {
+      // The Crimson entry is a real link (no data-view) — let the browser follow
+      // its href to /crimson rather than switching an in-page view.
+      if (!item.dataset.view) return;
       item.addEventListener('click', function () { setView(item.dataset.view); });
     });
 
