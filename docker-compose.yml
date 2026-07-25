@@ -49,12 +49,25 @@ services:
       # /static/*. An env flag rather than a DB setting on purpose: the situation
       # you need it for is "the database is unreachable".
       - MAINTENANCE_MODE=${MAINTENANCE_MODE:-false}
+      # ── zer0space ✕ Crimson gateway ────────────────────────────────────────────────────
+      # Serves the Crimson Haven frontend (github.com/crimsonhaven-to) at /crimson,
+      # gated on the zer0space session and reverse-proxied to these in-cluster
+      # services over crimson_net. The SSO broker gives each zer0space user a real
+      # Crimson account with no login screen: CRIMSON_SSO_INVITE_CODE must match the
+      # backend's SIGNUP_INVITE_CODE, and the per-user identity is keyed by the
+      # crimson_sso_secret Swarm secret below. Override any of these as stack env in
+      # Portainer if the backend listens on a different port, etc. Leave the URLs
+      # blank to turn the whole gateway off (then /crimson 404s).
+      - CRIMSON_CLIENT_URL=${CRIMSON_CLIENT_URL:-http://zer0space-crimson-client:80}
+      - CRIMSON_API_URL=${CRIMSON_API_URL:-http://zer0space-crimson-api:8000}
+      - CRIMSON_SSO_INVITE_CODE=${CRIMSON_SSO_INVITE_CODE:-zer0space}
     secrets:
       # Read from /run/secrets/<name> by src/config.py (config.read_secret),
       # which falls back to the matching env var only when the file is absent.
       - db_password
       - session_secret
       - totp_enc_key
+      - crimson_sso_secret
     volumes:
       # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
       # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
@@ -74,6 +87,9 @@ services:
     networks:
       - dashboard_net
       - cloudflared_proxy
+      # Shared overlay to reach the Crimson client + api by their service aliases.
+      # External — create it once before deploying: see the note at the bottom.
+      - crimson_net
     deploy:
       # replicas MUST stay at 1. The session store is in-process memory and holds
       # the per-user vault key (src/auth.py explains why it cannot live anywhere
@@ -166,6 +182,11 @@ networks:
     driver: overlay
   cloudflared_proxy:
     external: true
+  # Shared with the crimson-backend + crimson-client stacks. Create once on a
+  # manager BEFORE deploying (or the stack fails on the missing external network):
+  #   docker network create --driver overlay --attachable crimson_net
+  crimson_net:
+    external: true
 
 # All three are `external: true`, so they are created once on a manager node and
 # are never part of this file — a secret defined inline would sit in the repo:
@@ -173,6 +194,7 @@ networks:
 #   printf 'THE-DB-PASSWORD' | docker secret create db_password -
 #   openssl rand -hex 32 | tr -d '\n' | docker secret create session_secret -
 #   openssl rand -hex 32 | tr -d '\n' | docker secret create totp_enc_key -
+#   openssl rand -hex 32 | tr -d '\n' | docker secret create crimson_sso_secret -
 #
 # Rotating any of them means creating a new secret under a new name and updating
 # the reference: Docker secrets are immutable once created. Rotating
@@ -189,4 +211,7 @@ secrets:
   session_secret:
     external: true
   totp_enc_key:
+    external: true
+  # Keys the per-user Crimson SSO identities. Create it before deploying.
+  crimson_sso_secret:
     external: true
