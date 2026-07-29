@@ -471,7 +471,9 @@ if config.CRIMSON_ENABLED:
                 body = await request.body()
                 for attempt in (0, 1):
                     bearer = await crimson_sso.token(user)
-                    headers = crimson.build_request_headers(request, bearer=bearer)
+                    headers = crimson.build_request_headers(
+                        request, bearer=bearer, forwarded_prefix="/crimson/api"
+                    )
                     upstream = await crimson.open_upstream(
                         request, config.CRIMSON_API_URL, path, body, headers
                     )
@@ -486,7 +488,10 @@ if config.CRIMSON_ENABLED:
 
         # SSO off: no per-user accounts, but browse/play still work. Pass the user
         # id as a hint header in case the backend is configured to trust it.
-        return await crimson.proxy(request, config.CRIMSON_API_URL, path, inject_user=user)
+        return await crimson.proxy(
+            request, config.CRIMSON_API_URL, path,
+            inject_user=user, forwarded_prefix="/crimson/api",
+        )
 
     @app.get("/crimson", include_in_schema=False)
     async def crimson_root(request: Request) -> Response:

@@ -111,11 +111,22 @@ _HOP_BY_HOP = {
 }
 
 
+# Forwarded headers we recompute ourselves (below) — drop any the client or an
+# upstream CDN already set so the backend can't see a stale/spoofed value, and so
+# we never emit the same header twice in different letter-casing.
+_MANAGED_FORWARDED = {
+    "x-forwarded-proto",
+    "x-forwarded-host",
+    "x-forwarded-prefix",
+}
+
+
 def build_request_headers(
     request: Request,
     *,
     bearer: str | None = None,
     inject_user: str | None = None,
+    forwarded_prefix: str | None = None,
 ) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, value in request.headers.items():
@@ -134,7 +145,25 @@ def build_request_headers(
         # own Authorization override it.
         if lk == "authorization" and bearer:
             continue
+        # We set these ourselves below (see _public_base_url in the backend).
+        if lk in _MANAGED_FORWARDED:
+            continue
         out[key] = value
+
+    # Tell the backend its *public* address, so the absolute stream/proxy URLs it
+    # emits (e.g. the same-origin ``/voe_proxy`` VOE relay, whose CDN token is
+    # ASN-bound and can't be served off-origin) point at the public gateway rather
+    # than the internal Docker host httpx dialled. Without these the backend falls
+    # back to its bind host (``crimson-api:8000``), which no browser can reach —
+    # the classic "player stays grey at 0:00" cause. X-Forwarded-Prefix carries the
+    # gateway mount so the emitted path includes it (``/crimson/api/voe_proxy``).
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    out["X-Forwarded-Proto"] = proto.split(",")[0].strip()
+    host = request.headers.get("host") or request.url.netloc
+    out["X-Forwarded-Host"] = host
+    if forwarded_prefix:
+        out["X-Forwarded-Prefix"] = "/" + forwarded_prefix.strip("/")
+
     if bearer:
         out["Authorization"] = f"Bearer {bearer}"
     elif inject_user:
@@ -205,10 +234,13 @@ async def proxy(
     *,
     bearer: str | None = None,
     inject_user: str | None = None,
+    forwarded_prefix: str | None = None,
 ) -> Response:
     """Forward ``request`` to ``base_url``/``subpath`` and stream the reply back."""
     body = await request.body()
-    headers = build_request_headers(request, bearer=bearer, inject_user=inject_user)
+    headers = build_request_headers(
+        request, bearer=bearer, inject_user=inject_user, forwarded_prefix=forwarded_prefix
+    )
     try:
         upstream = await open_upstream(request, base_url, subpath, body, headers)
     except httpx.RequestError as err:
