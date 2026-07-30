@@ -35,7 +35,14 @@
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(body);
     }
-    if (!SAFE[method] && csrfToken) {
+    if (!SAFE[method]) {
+      /* Fail closed. Sending the request without the header just earns a 403
+         from the server middleware, which surfaces to the user as an
+         unexplained failure — the real cause is almost always a click that
+         landed before /api/me resolved and set the token. Say so instead. */
+      if (!csrfToken) {
+        throw new ApiError(0, 'CSRF_NOT_READY', window.I18N.t('err.CSRF_NOT_READY'), {});
+      }
       options.headers['X-CSRF-Token'] = csrfToken;
     }
 
