@@ -26,6 +26,7 @@ the small static SPA pass through the dashboard.
 from __future__ import annotations
 
 from typing import AsyncIterator
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Request
@@ -121,6 +122,49 @@ _MANAGED_FORWARDED = {
 }
 
 
+class UnsafePath(ValueError):
+    """A subpath tried to escape the upstream mount point with ``..``."""
+
+
+def _client_strip_set() -> set[str]:
+    """Header names a client may never supply to an upstream, lower-cased.
+
+    ``authorization`` and the identity header are in here **unconditionally**,
+    not only on the branch where the gateway is about to set its own value. Both
+    name who the caller is and the backend trusts them, so a client-supplied copy
+    is an identity claim rather than a preference. Leaving either through on the
+    branch that happens not to overwrite it is how a viewer reaches another
+    user's Crimson account.
+    """
+    names = set(_HOP_BY_HOP) | set(_MANAGED_FORWARDED)
+    # This hop's secret. The Crimson upstreams authenticate by their own scheme
+    # and must never see the zer0space session.
+    names.add("cookie")
+    # Ask upstream for identity encoding so bytes stream through unmodified.
+    names.add("accept-encoding")
+    names.add("authorization")
+    if config.CRIMSON_USER_HEADER:
+        names.add(config.CRIMSON_USER_HEADER.lower())
+    return names
+
+
+def _forwarded_origin(request: Request) -> tuple[str, str]:
+    """The (scheme, host) the backend should believe it is publicly reachable at.
+
+    Prefers PUBLIC_BASE_URL, because ``Host`` and ``X-Forwarded-Proto`` are both
+    client-controlled on any request that did not come through the tunnel, and
+    the backend turns these into the absolute stream URLs it hands the player.
+    Configuration is the only source here an attacker cannot set.
+    """
+    if config.PUBLIC_BASE_URL:
+        parsed = urlsplit(config.PUBLIC_BASE_URL)
+        if parsed.scheme and parsed.netloc:
+            return parsed.scheme, parsed.netloc
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("host") or request.url.netloc
+    return proto.split(",")[0].strip(), host
+
+
 def build_request_headers(
     request: Request,
     *,
@@ -128,27 +172,17 @@ def build_request_headers(
     inject_user: str | None = None,
     forwarded_prefix: str | None = None,
 ) -> dict[str, str]:
+    # Keys are lower-cased on the way in. HTTP header names are case-insensitive
+    # but a dict is not, so mixing casings previously let a client-supplied
+    # ``x-zer0space-user`` survive alongside the gateway's own
+    # ``X-Zer0space-User``, and both went out on the wire.
+    strip = _client_strip_set()
     out: dict[str, str] = {}
     for key, value in request.headers.items():
         lk = key.lower()
-        if lk in _HOP_BY_HOP:
+        if lk in strip:
             continue
-        # The zer0space session cookie is this hop's secret; the Crimson
-        # upstreams authenticate by their own scheme and must never see it.
-        if lk == "cookie":
-            continue
-        # Ask upstream for identity encoding so we can stream bytes through
-        # without having to re-encode.
-        if lk == "accept-encoding":
-            continue
-        # The gateway supplies the Crimson identity (SSO) — never let the client's
-        # own Authorization override it.
-        if lk == "authorization" and bearer:
-            continue
-        # We set these ourselves below (see _public_base_url in the backend).
-        if lk in _MANAGED_FORWARDED:
-            continue
-        out[key] = value
+        out[lk] = value
 
     # Tell the backend its *public* address, so the absolute stream/proxy URLs it
     # emits (e.g. the same-origin ``/voe_proxy`` VOE relay, whose CDN token is
@@ -157,26 +191,45 @@ def build_request_headers(
     # back to its bind host (``crimson-api:8000``), which no browser can reach —
     # the classic "player stays grey at 0:00" cause. X-Forwarded-Prefix carries the
     # gateway mount so the emitted path includes it (``/crimson/api/voe_proxy``).
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    out["X-Forwarded-Proto"] = proto.split(",")[0].strip()
-    host = request.headers.get("host") or request.url.netloc
-    out["X-Forwarded-Host"] = host
+    proto, host = _forwarded_origin(request)
+    out["x-forwarded-proto"] = proto
+    out["x-forwarded-host"] = host
     if forwarded_prefix:
-        out["X-Forwarded-Prefix"] = "/" + forwarded_prefix.strip("/")
+        out["x-forwarded-prefix"] = "/" + forwarded_prefix.strip("/")
 
     if bearer:
-        out["Authorization"] = f"Bearer {bearer}"
-    elif inject_user:
-        out[config.CRIMSON_USER_HEADER] = inject_user
+        out["authorization"] = f"Bearer {bearer}"
+    elif inject_user and config.CRIMSON_USER_HEADER:
+        out[config.CRIMSON_USER_HEADER.lower()] = inject_user
     return out
+
+
+# Relayed from the upstream back to the browser. An allow list, not a deny list:
+# these responses are served from the dashboard's own origin, so anything copied
+# through speaks with the dashboard's authority. ``set-cookie`` would let a
+# Crimson upstream write or clear the zer0space session cookie, and a relayed
+# ``access-control-allow-origin`` would hand a third party cross-origin reads of
+# this origin. Neither is something an upstream should be able to decide.
+_RESPONSE_ALLOW = {
+    "accept-ranges",
+    "cache-control",
+    "content-disposition",
+    "content-range",
+    "content-type",
+    "etag",
+    "expires",
+    "last-modified",
+    "location",
+    "retry-after",
+    "vary",
+}
 
 
 def _response_headers(upstream: httpx.Response) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, value in upstream.headers.items():
-        if key.lower() in _HOP_BY_HOP:
-            continue
-        out[key] = value
+        if key.lower() in _RESPONSE_ALLOW:
+            out[key.lower()] = value
     out["content-security-policy"] = CRIMSON_CSP
     # Keep NDJSON flushing through any buffering reverse proxy in front of us.
     out["x-accel-buffering"] = "no"
@@ -184,7 +237,14 @@ def _response_headers(upstream: httpx.Response) -> dict[str, str]:
 
 
 def _target(base_url: str, subpath: str, request: Request) -> str:
-    target = f"{base_url}/{subpath.lstrip('/')}"
+    cleaned = subpath.lstrip("/")
+    # httpx resolves dot segments per RFC 3986, so ``a/../../x`` would silently
+    # become ``/x`` upstream. It cannot cross to another host, but it does let the
+    # narrow media-relay routes reach any path on the backend, so the segment is
+    # rejected here rather than quietly normalised away.
+    if any(segment == ".." for segment in cleaned.split("/")):
+        raise UnsafePath(subpath)
+    target = f"{base_url}/{cleaned}"
     if request.url.query:
         target = f"{target}?{request.url.query}"
     return target
@@ -243,6 +303,10 @@ async def proxy(
     )
     try:
         upstream = await open_upstream(request, base_url, subpath, body, headers)
+    except UnsafePath:
+        return JSONResponse(
+            {"error": "Invalid path", "code": "CRIMSON_BAD_PATH"}, status_code=400
+        )
     except httpx.RequestError as err:
         return bad_gateway(err)
     return stream_response(upstream)

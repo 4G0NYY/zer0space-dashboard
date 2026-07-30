@@ -3,6 +3,24 @@
 .env.*
 !.env.example
 
+# Databases and dumps. A SQLite file from the pre-v4 migration would have held
+# live bcrypt hashes, vault salts and vault ciphertext — the exact thing the
+# vault design assumes an attacker does NOT have. One `git add -A` in the wrong
+# directory is all it would take.
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+secrets/
+
 # Python
 __pycache__/
 *.py[cod]

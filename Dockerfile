@@ -28,6 +28,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY static/ ./static/
 COPY templates/ ./templates/
+# The break-glass unlock tool. README.md and docs/security.md both document it as
+# `docker exec ... python scripts/unlock-user.py`, which could not work while the
+# directory was missing from the image — and the moment you need it is when every
+# admin is locked out and there is no browser path back in.
+COPY scripts/ ./scripts/
 
 # The app never writes to its own filesystem — uploads and backup drops live on
 # the /data volume — so it runs unprivileged.
@@ -45,4 +50,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # One worker, not several. The session store is in-process memory and holds the
 # per-user vault key (see src/auth.py), so a second worker would serve requests
 # that cannot see the session the first one created.
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "3000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+#
+# --forwarded-allow-ips is deliberately NOT passed as '*' any more. With that
+# value uvicorn trusts X-Forwarded-For from any peer and overwrites the socket
+# address with it, which made request.client.host attacker-controlled — so
+# setting TRUST_PROXY=false, the documented mitigation for a directly exposed
+# dashboard, did not actually restore honest per-IP rate limiting. Both branches
+# of auth.client_ip read a spoofable value while this flag says '*'.
+#
+# Omitting it lets uvicorn read the FORWARDED_ALLOW_IPS environment variable and
+# fall back to 127.0.0.1. Set that variable to the tunnel's overlay subnet (see
+# docker-compose.yml) rather than restoring the wildcard.
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "3000", "--workers", "1", "--proxy-headers"]

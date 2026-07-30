@@ -916,7 +916,10 @@
     if (!input || !preview) return;
     input.value = window.ZS_ICONS.sanitize(input.value);
     var cls = window.ZS_ICONS.cls(input.value);
-    preview.innerHTML = cls ? '<i class="' + cls + '"></i>' : '<i class="ti ti-help"></i>';
+    // esc() is redundant here (ZS_ICONS.sanitize already reduces the value to
+    // [a-z0-9-]) but keeps the "everything reaching innerHTML is escaped" rule
+    // true by grep rather than by argument.
+    preview.innerHTML = cls ? '<i class="' + esc(cls) + '"></i>' : '<i class="ti ti-help"></i>';
     preview.classList.toggle('is-empty', !cls);
   }
 
@@ -930,8 +933,9 @@
     var box = $('icon-suggest');
     if (!box || !window.ZS_ICONS) return;
     box.innerHTML = window.ZS_ICONS.suggest.map(function (name) {
-      return '<button type="button" class="icon-chip" data-icon="' + name +
-             '" title="' + name + '"><i class="ti ti-' + name + '"></i></button>';
+      var safe = esc(name);
+      return '<button type="button" class="icon-chip" data-icon="' + safe +
+             '" title="' + safe + '"><i class="ti ti-' + safe + '"></i></button>';
     }).join('');
     box.addEventListener('click', function (event) {
       var chip = event.target.closest('[data-icon]');

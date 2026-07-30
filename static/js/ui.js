@@ -155,7 +155,15 @@
 
   /* Every string that comes from the database or from the Docker API goes
      through this before it reaches innerHTML. Service names, hostnames and
-     vault titles are all user-controlled. */
+     vault titles are all user-controlled, and so are the username and IP columns
+     in the audit table, which any anonymous visitor can write to by failing a
+     login.
+
+     CONTRACT: HTML text and QUOTED attribute contexts only. Both quote
+     characters are escaped, so attr="..." and attr='...' are both safe. It is
+     NOT safe for an unquoted attribute (space, =, backtick and / are left
+     alone), NOT a JavaScript string escaper, and NOT a CSS escaper. Every
+     attribute built in this project is double-quoted; keep it that way. */
   function esc(value) {
     return String(value === null || value === undefined ? '' : value)
       .replace(/&/g, '&amp;')
@@ -171,7 +179,13 @@
   function safeUrl(value) {
     var raw = String(value || '').trim();
     if (!raw) return '';
-    if (/^\//.test(raw) && !/^\/\//.test(raw)) return raw;
+    /* Everything goes through the URL parser. There used to be a fast path that
+       returned any string starting with a single "/" unparsed, on the assumption
+       that it was site-relative. It is not: the URL spec treats "\" as "/" in the
+       authority states for special schemes, so "/\evil.com" resolves to
+       http://evil.com/ in every major browser while passing a /^\// test. Letting
+       the parser decide costs nothing and removes the only branch that returned
+       input it had not looked at. */
     try {
       var parsed = new URL(raw, window.location.origin);
       return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : '';

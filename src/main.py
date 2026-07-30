@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -38,13 +39,21 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import ai, auth, config, crimson, crimson_sso, db, metrics, totp, vault
 
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.3.0"
+ASSET_VERSION = "4.3.1"
+
+# Ceiling on a buffered request body. The API only ever receives small JSON
+# objects — the largest legitimate one is a vault entry, capped by
+# vault.validate_entry at a few kB — so 512 kB is generous. The Crimson gateway
+# forwards for a third-party API and gets its own, looser limit.
+MAX_BODY_BYTES = 512 * 1024
+MAX_PROXY_BODY_BYTES = 32 * 1024 * 1024
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)
@@ -195,6 +204,12 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # /api/* answers routinely carry decrypted vault entries, TOTP
+        # provisioning URIs and recovery codes. Without this they are eligible
+        # for the browser's on-disk cache, which leaves plaintext passwords in a
+        # file that outlives the session and survives signing out.
+        is_api = scope.get("path", "").startswith("/api/")
+
         async def send_wrapper(message: Any) -> None:
             if message["type"] == "http.response.start":
                 headers = message.setdefault("headers", [])
@@ -202,9 +217,75 @@ class SecurityHeadersMiddleware:
                 for key, value in self.headers:
                     if key not in existing:
                         headers.append((key, value))
+                if is_api and b"cache-control" not in existing:
+                    headers.append((b"cache-control", b"no-store, private"))
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
+
+
+class BodyLimitMiddleware:
+    """Reject oversized request bodies before anything buffers them.
+
+    ``json_body`` and the Crimson proxy both read the whole body into memory,
+    and neither Starlette nor uvicorn caps it. /api/login is unauthenticated and
+    reaches that path, so without a limit any anonymous client can make the
+    process buffer an arbitrarily large body. The service runs at replicas: 1
+    because the session store is in-process, so there is no second instance to
+    absorb it and a kill signs everyone out.
+
+    Content-Length is checked first because it is free. A chunked body carries no
+    length, so the receive channel is metered as it streams and the request is cut
+    off the moment it crosses the cap.
+    """
+
+    def __init__(self, app: Any, max_bytes: int, proxy_max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+        self.proxy_max_bytes = proxy_max_bytes
+
+    def _limit_for(self, path: str) -> int:
+        # The Crimson gateway forwards uploads and POST bodies for a third-party
+        # API, so it gets its own, looser ceiling rather than the API's.
+        if path == config.CRIMSON_PATH or path.startswith(config.CRIMSON_PATH + "/"):
+            return self.proxy_max_bytes
+        return self.max_bytes
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+
+        limit = self._limit_for(scope.get("path", "/"))
+        headers = {k.lower(): v for k, v in scope.get("headers", [])}
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            try:
+                if int(declared) > limit:
+                    await self._too_large(scope, receive, send)
+                    return
+            except ValueError:
+                await self._too_large(scope, receive, send)
+                return
+
+        seen = 0
+
+        async def metered_receive() -> Any:
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > limit:
+                    # Signalling disconnect stops the body generator rather than
+                    # letting the handler keep pulling an unbounded stream.
+                    return {"type": "http.disconnect"}
+            return message
+
+        await self.app(scope, metered_receive, send)
+
+    async def _too_large(self, scope: Any, receive: Any, send: Any) -> None:
+        response = fail(413, "BODY_TOO_LARGE", "Request body too large")
+        await response(scope, receive, send)
 
 
 class CsrfMiddleware:
@@ -435,13 +516,26 @@ app = FastAPI(
 )
 
 # Added last = outermost. Order of execution is therefore:
-#   Maintenance -> SecurityHeaders -> Session -> CSRF -> routes
+#   TrustedHost -> BodyLimit -> Maintenance -> SecurityHeaders -> Session -> CSRF -> routes
 # CSRF must sit inside Session (it reads request.state.session), and Session must
-# sit inside SecurityHeaders so the Set-Cookie header is never dropped.
+# sit inside SecurityHeaders so the Set-Cookie header is never dropped. BodyLimit
+# sits outside everything that reads a body, so an oversized request is refused
+# before any of it is buffered.
 app.add_middleware(CsrfMiddleware)
 app.add_middleware(auth.SessionMiddleware, store=session_store, secret=session_secret)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(MaintenanceMiddleware)
+app.add_middleware(
+    BodyLimitMiddleware,
+    max_bytes=MAX_BODY_BYTES,
+    proxy_max_bytes=MAX_PROXY_BODY_BYTES,
+)
+# Only mounted when ALLOWED_HOSTS is configured. A forged Host reaches the
+# Crimson gateway's forwarded headers and any absolute URL built from it, and
+# nothing else in the stack validates it. Left off by default so an existing
+# deployment that has not set the variable keeps working unchanged.
+if config.ALLOWED_HOSTS:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.ALLOWED_HOSTS)
 
 app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
 
@@ -491,6 +585,10 @@ if config.CRIMSON_ENABLED:
                         crimson_sso.invalidate(user)
                         continue
                     return crimson.stream_response(upstream)
+            except crimson.UnsafePath:
+                # Not an SSO failure, and retrying it unauthenticated below would
+                # just reject it a second time.
+                return fail(400, "CRIMSON_BAD_PATH", "Invalid path")
             except Exception as err:  # noqa: BLE001
                 print(f"[crimson] SSO auth failed for zer0space user {user}: {err!r}")
                 # fall through to the unauthenticated proxy below
@@ -512,12 +610,21 @@ if config.CRIMSON_ENABLED:
     # Forward any ``/<name>_proxy`` back to the backend so the whole segment chain
     # resolves. The links are HMAC-signed with the backend's PROXY_SECRET and
     # re-verified there; the session gate just keeps the relay signed-in-only.
+    # These two sit at the dashboard root, so every URL ending in _proxy belongs
+    # to Crimson once the gateway is on. The relay name is checked against a
+    # conservative character class rather than accepting any segment: it is
+    # pasted straight into the upstream URL, and the routes exist only to carry
+    # the backend's own ``/<name>_proxy`` links.
+    _RELAY_NAME_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$", re.IGNORECASE)
+
     @app.api_route(
         "/{proxy_name}_proxy", methods=["GET", "HEAD", "OPTIONS"], include_in_schema=False
     )
     async def crimson_media_proxy(request: Request, proxy_name: str) -> Response:
         if _crimson_user(request) is None:
             return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+        if not _RELAY_NAME_OK.match(proxy_name):
+            return fail(404, "NOT_FOUND", "Not found")
         return await crimson.proxy(request, config.CRIMSON_API_URL, f"{proxy_name}_proxy")
 
     @app.api_route(
@@ -530,6 +637,8 @@ if config.CRIMSON_ENABLED:
     ) -> Response:
         if _crimson_user(request) is None:
             return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+        if not _RELAY_NAME_OK.match(proxy_name):
+            return fail(404, "NOT_FOUND", "Not found")
         return await crimson.proxy(
             request, config.CRIMSON_API_URL, f"{proxy_name}_proxy/{rest}"
         )
@@ -859,6 +968,11 @@ async def api_2fa_login(request: Request) -> Response:
     user = await db.fetchrow("SELECT * FROM users WHERE id = $1", pending_id)
     if not user or not user["totp_enabled"]:
         return fail(401, "TWOFA_SESSION_EXPIRED", "Session expired — please log in again")
+    # Re-checked here, not just in api_login: the pending session lives for five
+    # minutes, and an admin locking the account inside that window must not leave
+    # the holder of a half-finished login able to complete it.
+    if auth.is_locked(user):
+        return fail(401, "TWOFA_SESSION_EXPIRED", "Session expired — please log in again")
 
     ip = auth.client_ip(request)
     secret = vault.decrypt_field(user["totp_secret"], totp_key) if user["totp_secret"] else None
@@ -1043,9 +1157,16 @@ async def api_change_password(request: Request) -> Response:
 
 # --- 2FA (TOTP) — setup / verify / disable -----------------------------------
 #
-# All three re-check the current password even though the session is already
-# authenticated: turning a second factor on or off is sensitive enough to
-# re-confirm identity, which also covers a hijacked-but-unlocked browser tab.
+# /api/2fa/setup and /api/2fa/disable re-check the current password even though
+# the session is already authenticated: turning a second factor on or off is
+# sensitive enough to re-confirm identity, which also covers a
+# hijacked-but-unlocked browser tab.
+#
+# /api/2fa/verify deliberately does NOT, because it cannot be reached without
+# first passing the password check in /api/2fa/setup — it only confirms that the
+# secret that setup handed out was actually scanned. Stated explicitly because
+# the previous wording claimed all three check the password, and a reader
+# trusting that would not notice which one does not.
 
 
 @app.post("/api/2fa/setup")

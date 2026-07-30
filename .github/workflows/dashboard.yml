@@ -16,6 +16,14 @@ on:
       - 'requirements.txt'
   workflow_dispatch:
 
+# Least privilege by default. Without this the token inherits the repository
+# default, which on older repos is still read/write on every scope — and the
+# check job below runs `pip install` against the PR's own requirements.txt,
+# which executes arbitrary code from a package's build backend. The build job
+# re-grants packages: write for itself.
+permissions:
+  contents: read
+
 jobs:
   # Cheap guardrails. There is no test suite yet, so this is what stands between
   # a typo and a container that crash-loops on the cluster: the whole package has
@@ -23,9 +31,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to commit SHAs, not to moving major tags.
+      # A tag is repointable by whoever controls the action's repository, and the
+      # build job below has a long-lived PAT in its environment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           cache: pip
@@ -61,22 +72,28 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # CR_PAT (a classic PAT with write:packages) rather than GITHUB_TOKEN.
       # GITHUB_TOKEN only carries write access to packages that are linked to
       # this repository; a GHCR package created outside it — or one whose access
       # settings never got the repo added — rejects it regardless of the
       # permissions block above.
-      - uses: docker/login-action@v3
+      #
+      # This is a long-lived, coarse-grained credential and it is live in this
+      # job's environment, which is why every action here is SHA-pinned. Better
+      # still: replace it with a fine-grained PAT scoped to package write on this
+      # one package, or fix the GHCR package's access settings so GITHUB_TOKEN
+      # works and drop CR_PAT entirely.
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.CR_PAT }}
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
