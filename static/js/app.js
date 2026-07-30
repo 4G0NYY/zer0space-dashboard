@@ -96,6 +96,8 @@
     if (name === 'vault' && !state.vault.length) loadVault();
     if (name === 'settings' && state.isAdmin) loadAdmin();
     if (name === 'settings') setSettingsTab(state.settingsTab);
+    // ai.js is only loaded when the AI gateway is wired, so it may not exist.
+    if (name === 'ai' && window.ZS_AI) window.ZS_AI.openView();
   }
 
   /* --- Settings sub-tabs -------------------------------------------------- */
@@ -120,6 +122,10 @@
     document.querySelectorAll('.tab-pane').forEach(function (pane) {
       pane.hidden = pane.dataset.pane !== name;
     });
+
+    // Loaded lazily: the AI configuration is a round trip to another service,
+    // and most visits to Settings are not about the assistant.
+    if (name === 'ai' && window.ZS_AI) window.ZS_AI.openSettings();
   }
 
   function wireSettingsTabs() {
@@ -1168,6 +1174,7 @@
     renderInvites();
     renderUsers();
     renderAudit();
+    if (window.ZS_AI) window.ZS_AI.render();
   });
 
   document.addEventListener('DOMContentLoaded', init);

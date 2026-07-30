@@ -39,12 +39,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, config, crimson, crimson_sso, db, metrics, totp, vault
+from . import ai, auth, config, crimson, crimson_sso, db, metrics, totp, vault
 
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.2.3"
+ASSET_VERSION = "4.3.0"
 
 templates = Jinja2Templates(directory=str(config.TEMPLATES_DIR))
 session_store = auth.SessionStore(max_age=config.SESSION_MAX_AGE)
@@ -137,6 +137,9 @@ def page(request: Request, name: str, **context: Any) -> Response:
             "status_url": config.STATUS_URL,
             # Show the Crimson entry in the sidebar only when the gateway is wired.
             "crimson_enabled": config.CRIMSON_ENABLED,
+            # Show the AI chat panel only when the gateway is wired. The panel is
+            # useless without it, and an empty view is worse than no view.
+            "ai_enabled": config.AI_ENABLED,
             **context,
         },
     )
@@ -362,6 +365,8 @@ async def lifespan(app: FastAPI):
             await db.init_schema()
             secret = await resolve_session_secret()
             totp_key = await resolve_totp_key()
+            if config.AI_ENABLED:
+                await ai.resolve_service_token()
             await auth.prune_login_attempts()
             if await no_users_yet():
                 print("[dashboard] no accounts yet — the setup wizard is open at /setup")
@@ -405,6 +410,9 @@ async def lifespan(app: FastAPI):
             f"[crimson] gateway on {config.CRIMSON_PATH} "
             f"(spa={config.CRIMSON_CLIENT_URL}, api={config.CRIMSON_API_URL}, sso={sso})"
         )
+    if config.AI_ENABLED:
+        state = "ready" if ai.configured() else "no shared token yet"
+        print(f"[ai] gateway on /api/ai (service={config.AI_SERVICE_URL}, {state})")
     print(f"[dashboard] listening :{config.PORT}")
     try:
         yield
@@ -413,6 +421,7 @@ async def lifespan(app: FastAPI):
             task.cancel()
         await metrics.close()
         await crimson.close()
+        await ai.close()
         await db.close()
 
 
@@ -1329,6 +1338,155 @@ async def api_vault_delete(request: Request, entry_id: str) -> Response:
     return Response(status_code=204)
 
 
+# --- AI assistant -----------------------------------------------------------
+#
+# Every route here is a thin gate in front of the zer0space AI service: check the
+# session, forward who is asking, pass the answer back. The AI service holds the
+# provider keys and the chat history and is not reachable from anywhere else, so
+# this is the only door into it.
+#
+# The one route that does real work is the chat one, which attaches the live
+# cluster snapshot. metrics.py here is the authoritative view of the cluster, so
+# the snapshot is built server-side and sent along rather than the AI service
+# growing a second, disagreeing implementation of "how many nodes are up".
+
+
+async def _ai_context_bundle() -> dict[str, Any]:
+    """The cluster snapshot the assistant reasons over.
+
+    Deliberately built here and not accepted from the browser. The client already
+    has most of this on screen, so taking it from the request would be cheaper,
+    but it would also mean the model's view of the cluster is whatever the client
+    said it was.
+
+    Every part is best effort: a failed poll means one section of the prompt says
+    "no data", which is a far better outcome than the chat box refusing to answer
+    because Glances timed out on one host.
+    """
+    bundle: dict[str, Any] = {}
+    try:
+        data = await metrics.collect()
+        backup = metrics.backup_status()
+        bundle.update(
+            {
+                "tiles": metrics.build_tiles(data, backup),
+                "nodes": data["nodes"],
+                "extraHosts": data["extraHosts"],
+                "swarm": data["swarm"],
+                "backup": backup,
+                "error": data["error"],
+            }
+        )
+    except Exception as err:  # noqa: BLE001 context is a bonus, never a blocker
+        print(f"[ai] could not collect cluster context: {err!r}")
+        bundle["error"] = "PROXY_UNAVAILABLE"
+
+    try:
+        rows = await db.fetch(
+            "SELECT id, name, description, url, category, status FROM services ORDER BY id"
+        )
+        bundle["services"] = db.rows_to_dicts(rows)
+    except Exception as err:  # noqa: BLE001
+        print(f"[ai] could not load the service catalogue: {err!r}")
+
+    return bundle
+
+
+@app.get("/api/ai/status")
+async def api_ai_status(request: Request) -> Response:
+    """Can this user chat, and to which model?
+
+    Answers without contacting the AI service when the gateway is off, so the
+    chat view can hide itself on a deployment that never opted in.
+    """
+    session = _require_session(request)
+    if not config.AI_ENABLED:
+        return JSONResponse({"enabled": False, "ready": False, "reason": "AI_NOT_CONFIGURED"})
+    return await ai.call("GET", "/api/status", session)
+
+
+@app.get("/api/ai/providers")
+async def api_ai_providers(request: Request) -> Response:
+    return await ai.call("GET", "/api/providers", _require_admin(request))
+
+
+@app.post("/api/ai/chat")
+async def api_ai_chat(request: Request) -> Response:
+    """Send one message and stream the answer back as Server-Sent Events."""
+    session = _require_session(request)
+    body = await json_body(request)
+
+    message = body.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return fail(400, "AI_MESSAGE_REQUIRED", "A message is required")
+
+    payload: dict[str, Any] = {"message": message}
+    if isinstance(body.get("conversationId"), int):
+        payload["conversationId"] = body["conversationId"]
+    payload["context"] = await _ai_context_bundle()
+
+    return await ai.stream_chat(request, session, payload)
+
+
+@app.get("/api/ai/conversations")
+async def api_ai_conversations(request: Request) -> Response:
+    return await ai.call("GET", "/api/conversations", _require_session(request))
+
+
+@app.get("/api/ai/conversations/{conversation_id}")
+async def api_ai_conversation(request: Request, conversation_id: str) -> Response:
+    session = _require_session(request)
+    return await ai.call("GET", f"/api/conversations/{_path_id(conversation_id)}", session)
+
+
+@app.delete("/api/ai/conversations/{conversation_id}")
+async def api_ai_delete_conversation(request: Request, conversation_id: str) -> Response:
+    session = _require_session(request)
+    return await ai.call("DELETE", f"/api/conversations/{_path_id(conversation_id)}", session)
+
+
+@app.delete("/api/ai/conversations")
+async def api_ai_delete_conversations(request: Request) -> Response:
+    """Clear the caller's own history.
+
+    No userId is forwarded, so a user can only ever clear their own. The admin
+    form of this call is made by the account deletion route, not from the UI.
+    """
+    return await ai.call("DELETE", "/api/conversations", _require_session(request))
+
+
+@app.get("/api/ai/config")
+async def api_ai_get_config(request: Request) -> Response:
+    return await ai.call("GET", "/api/config", _require_admin(request))
+
+
+@app.put("/api/ai/config")
+async def api_ai_put_config(request: Request) -> Response:
+    """Update the assistant's configuration.
+
+    The body is forwarded as-is and validated by the AI service, which owns the
+    document's shape. Validating it here too would mean two implementations of
+    the same rules, drifting apart one release at a time.
+    """
+    session = _require_admin(request)
+    return await ai.call("PUT", "/api/config", session, body=await json_body(request))
+
+
+@app.post("/api/ai/config/test")
+async def api_ai_test_config(request: Request) -> Response:
+    session = _require_admin(request)
+    return await ai.call("POST", "/api/config/test", session, body=await json_body(request))
+
+
+@app.get("/api/ai/models")
+async def api_ai_models(request: Request) -> Response:
+    session = _require_admin(request)
+    provider = request.query_params.get("provider") or ""
+    return await ai.call(
+        "GET", "/api/models", session, params={"provider": provider} if provider else None
+    )
+
+
 # --- Admin: services --------------------------------------------------------
 
 
@@ -1700,6 +1858,14 @@ async def api_delete_user(request: Request, user_id: str) -> Response:
         await con.execute("UPDATE invite_codes SET created_by = NULL WHERE created_by = $1", uid)
         await con.execute("UPDATE invite_codes SET used_by = NULL WHERE used_by = $1", uid)
         await con.execute("DELETE FROM users WHERE id = $1", uid)
+
+    # The AI service keeps chat history in its own tables, which deliberately
+    # carry no foreign key to users(id): one would make the DELETE above fail
+    # from a table this repo has never heard of. So the cleanup is an explicit
+    # call, made after the commit and best effort. If the AI service is down, its
+    # own retention prune sweeps the rows later; failing an account deletion
+    # because a chat service is unreachable would be the wrong trade.
+    await ai.purge_user(uid, session)
     return JSONResponse({"ok": True})
 
 

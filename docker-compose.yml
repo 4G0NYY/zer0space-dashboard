@@ -61,6 +61,14 @@ services:
       - CRIMSON_CLIENT_URL=${CRIMSON_CLIENT_URL:-http://zer0space-crimson-client:80}
       - CRIMSON_API_URL=${CRIMSON_API_URL:-http://zer0space-crimson-api:8000}
       - CRIMSON_SSO_INVITE_CODE=${CRIMSON_SSO_INVITE_CODE:-zer0space}
+      # ── AI assistant ───────────────────────────────────────────────────────────────────
+      # Address of the zer0space-ai service below. Only the address is here:
+      # the provider, the model, the API keys and the system prompt live in
+      # PostgreSQL and are edited in the dashboard under Settings > AI, so
+      # switching model is a dropdown and not a redeploy.
+      # Blank turns the whole feature off (the chat panel hides itself and
+      # /api/ai/* answers 503), so removing this line is the off switch.
+      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai:8000}
     secrets:
       # Read from /run/secrets/<name> by src/config.py (config.read_secret),
       # which falls back to the matching env var only when the file is absent.
@@ -68,6 +76,16 @@ services:
       - session_secret
       - totp_enc_key
       - crimson_sso_secret
+      # ai_service_token is shared with the ai service below and is OPT-IN.
+      # Left commented out, both services fall back to a value generated once and
+      # stored in the settings table, which they both read, so a first deploy
+      # needs no setup at all. Creating the secret is still better, because then
+      # the token never lands in the database.
+      #
+      # A Swarm stack fails to deploy if it references an external secret that
+      # does not exist, so uncomment this line, the matching one in the ai
+      # service, AND the two declarations at the bottom of this file together.
+      # - ai_service_token
     volumes:
       # Central NFS storage from zs-store-01 (192.168.0.15:/srv/nfs/swarm-data),
       # mounted on every Swarm node at /mnt/storage (persistent via /etc/fstab).
@@ -111,6 +129,63 @@ services:
         reservations:
           cpus: '0.05'
           memory: 64M
+
+  # ── AI assistant (github.com/zer0space-net/zer0space-ai) ────────────────────────────────
+  # Answers questions about the cluster with its live state attached. The
+  # dashboard gates it on the session and reverse-proxies it at /api/ai/*.
+  #
+  # Note what is NOT here: no provider, no model, no API key. All of that is
+  # configured by an admin in the dashboard and stored in PostgreSQL, which is
+  # the whole point. The only thing this service needs from the environment is
+  # how to reach the database.
+  #
+  # Deliberately publishes NO ports. It does not authenticate users; it
+  # authenticates the dashboard with a shared token and trusts the caller
+  # identity the dashboard forwards. That is sound only while the dashboard is
+  # the only thing that can reach it, so adding a `ports:` entry here or putting
+  # it behind the tunnel would break the security model, not just expose a port.
+  ai:
+    image: ghcr.io/zer0space-net/zer0space-ai:latest
+    environment:
+      - TZ=Europe/Zurich
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DB_HOST=${DB_HOST:-192.168.0.16}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-zer0space}
+      - DB_USER=${DB_USER:-dashboard}
+      # Conversations untouched for this long are pruned daily. 0 keeps them
+      # forever, which is a slow leak into the shared database.
+      - HISTORY_RETENTION_DAYS=${AI_HISTORY_RETENTION_DAYS:-90}
+    secrets:
+      - db_password
+      # Both opt-in, same as on the dashboard above: without them the service
+      # generates each value once and stores it in the settings table.
+      #
+      # ai_enc_key encrypts the provider API keys at rest. Rotating it makes
+      # every stored key undecryptable and they have to be entered again in the
+      # dashboard; there is no re-encryption path, because the plaintext exists
+      # nowhere else. Treat it as close to permanent as the database password.
+      # - ai_service_token
+      # - ai_enc_key
+    networks:
+      - dashboard_net
+    deploy:
+      # Unlike the dashboard this genuinely scales: there is no in-process
+      # session store and no local state, so any replica can answer any request.
+      # A streaming answer holds a worker for as long as the model keeps
+      # talking, so concurrent users are what sizes this, not request rate.
+      replicas: 2
+      update_config:
+        order: start-first
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 384M
+        reservations:
+          cpus: '0.05'
+          memory: 96M
 
   socketproxy:
     image: tecnativa/docker-socket-proxy
@@ -215,3 +290,17 @@ secrets:
   # Keys the per-user Crimson SSO identities. Create it before deploying.
   crimson_sso_secret:
     external: true
+  # Shared between the dashboard and the ai service, and OPT-IN. Declaring an
+  # external secret that does not exist makes the whole stack fail to deploy, so
+  # these stay commented out until you have actually created them:
+  #
+  #   openssl rand -hex 32 | tr -d '\n' | docker secret create ai_service_token -
+  #   openssl rand -hex 32 | tr -d '\n' | docker secret create ai_enc_key -
+  #
+  # Then uncomment these two AND the matching lines in the dashboard and ai
+  # services above. Until you do, both services generate the values on first
+  # boot and store them in the settings table, which is a fully working setup.
+  # ai_service_token:
+  #   external: true
+  # ai_enc_key:
+  #   external: true

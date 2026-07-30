@@ -211,3 +211,18 @@ CRIMSON_USER_HEADER = os.environ.get("CRIMSON_USER_HEADER", "X-Zer0space-User")
 CRIMSON_SSO_SECRET = read_secret("crimson_sso_secret", "CRIMSON_SSO_SECRET")
 CRIMSON_SSO_INVITE_CODE = os.environ.get("CRIMSON_SSO_INVITE_CODE", "") or None
 CRIMSON_SSO_ENABLED = bool(CRIMSON_ENABLED and CRIMSON_SSO_SECRET and CRIMSON_SSO_INVITE_CODE)
+
+# --- AI assistant -----------------------------------------------------------
+# The assistant lives in a separate service (github.com/zer0space-net/zer0space-ai)
+# that this dashboard gates and proxies at /api/ai/*. Only the *address* is
+# configured here: everything about the assistant itself (provider, model, API
+# keys, system prompt, context toggles) lives in PostgreSQL and is edited by an
+# admin in the dashboard, so changing the model is a dropdown and not a redeploy.
+#
+# Blank turns the whole feature off: /api/ai/* answers 503 and the AI chat panel
+# stays hidden, so this is inert until a deployment opts in.
+AI_SERVICE_URL = os.environ.get("AI_SERVICE_URL", "http://ai:8000").rstrip("/") or None
+# Header the AI service checks. Its counterpart secret is resolved in ai.py with
+# the same chain as session_secret: Swarm secret, env var, DB row, generated.
+AI_TOKEN_HEADER = "x-zer0space-ai-token"
+AI_ENABLED = bool(AI_SERVICE_URL)

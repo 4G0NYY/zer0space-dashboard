@@ -596,3 +596,171 @@
   .panel-head { flex-wrap: wrap; }
   .content { padding: 16px 14px 40px; }
 }
+
+/* --- AI assistant --------------------------------------------------------- */
+
+/* Small variant of .input, the counterpart to the existing .btn-sm. Introduced
+   for the conversation picker in the chat panel header, where a full-height
+   input would tower over the buttons next to it. */
+.input-sm {
+  padding: 7px 10px;
+  font-size: 0.88rem;
+  height: auto;
+}
+
+.ai-panel { display: flex; flex-direction: column; }
+.ai-actions .input-sm { max-width: 220px; }
+
+.ai-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* The log scrolls, the composer does not. Sizing the panel to the viewport
+     rather than to its content is what keeps the input reachable without
+     scrolling the whole page down past a long answer. */
+  min-height: 0;
+}
+
+.ai-log {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  min-height: 240px;
+  height: clamp(280px, 52vh, 620px);
+  padding: 4px 6px 4px 0;
+  scroll-behavior: smooth;
+}
+
+.ai-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 88%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--glass-2);
+}
+
+/* The user's own turns are pulled right and tinted with the accent, so the two
+   sides of the conversation are distinguishable at a glance without either one
+   losing the panel's glass treatment. */
+.ai-msg.is-user {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--accent) 14%, var(--glass-2));
+  border-color: var(--accent-line);
+}
+.ai-msg.is-assistant { align-self: flex-start; }
+
+.ai-who {
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ai-model {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+.ai-text { line-height: 1.6; overflow-wrap: anywhere; }
+.ai-text code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
+}
+.ai-code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 8px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
+  /* Long log lines and URLs scroll inside the bubble rather than widening the
+     panel and, with it, the whole page. */
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.ai-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-tool {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text-dim);
+}
+
+/* Three dots while the first token is still on its way. Purely cosmetic, and it
+   answers the only question the user has at that moment: did it hear me. */
+.ai-typing { display: inline-flex; gap: 4px; align-items: center; height: 1.4em; }
+.ai-typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  animation: ai-blink 1.3s infinite ease-in-out;
+}
+.ai-typing i:nth-child(2) { animation-delay: 0.18s; }
+.ai-typing i:nth-child(3) { animation-delay: 0.36s; }
+@keyframes ai-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-typing i { animation: none; opacity: 0.6; }
+  .ai-log { scroll-behavior: auto; }
+}
+
+.ai-empty { margin: auto 0; text-align: center; color: var(--text-dim); }
+.ai-empty ul { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; justify-items: center; }
+.ai-example {
+  font: inherit;
+  color: var(--text-dim);
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--glass-2);
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.ai-example:hover { border-color: var(--accent-line); color: var(--text); }
+
+.ai-composer { display: flex; align-items: flex-end; gap: 10px; }
+.ai-composer.is-disabled { opacity: 0.55; pointer-events: none; }
+.ai-input {
+  flex: 1;
+  resize: none;
+  min-height: 44px;
+  max-height: 200px;
+  line-height: 1.5;
+}
+.ai-send {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ai-hint { font-size: 0.78rem; margin: 0; }
+
+/* Settings pane */
+.ai-cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
+.ai-prompt { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.55; resize: vertical; }
+
+@media (max-width: 720px) {
+  .ai-msg { max-width: 100%; }
+  .ai-actions { width: 100%; }
+  .ai-actions .input-sm { max-width: none; flex: 1; }
+  .ai-log { height: clamp(240px, 46vh, 460px); }
+}

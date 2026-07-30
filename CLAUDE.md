@@ -18,6 +18,9 @@ A self-hosted homelab dashboard for the zer0space Docker Swarm cluster:
   invitation codes, and optional per-user TOTP two-factor authentication.
 - **Password vault** — per-user encrypted credential storage. This is the part to
   be most careful with.
+- **AI assistant**: a chat panel that answers questions about the cluster with
+  its live state attached. The model call itself lives in a separate service
+  (`zer0space-ai`); this repo gates it and proxies it. See `docs/ai.md`.
 
 It runs as a single container, one replica, behind a Cloudflare Tunnel.
 
@@ -68,6 +71,7 @@ src/
 ├── totp.py      TOTP secret/QR generation and verification (pyotp + qrcode/Pillow)
 ├── vault.py     PBKDF2 + AES-256-GCM, vault CRUD helpers
 ├── metrics.py   Docker socket proxy + Glances polling, status tiles
+├── ai.py        Gateway to the zer0space-ai service (session gate + proxy)
 └── main.py      FastAPI app: middleware, routes, lifespan
 static/
 ├── css/  main.css (design system) + one file per page family
@@ -83,6 +87,7 @@ scripts/
 └── unlock-user.py  Break-glass account unlock (see docs/security.md)
 docs/
 ├── security.md   Auth system, invite flow, secrets, rate limits, vault
+├── ai.md         The AI assistant integration and its boundaries
 └── design.md     The visual language and where the artwork comes from
 ```
 
@@ -324,10 +329,36 @@ Since the frontend has no build step, editing anything under `static/` only need
 a browser reload. Bump `ASSET_VERSION` in `src/main.py` when you change CSS or JS
 that a cached browser must not keep.
 
+## The AI assistant
+
+The assistant is a **separate service**, `zer0space-ai`, and this repo only gates
+and proxies it (`src/ai.py`, routes under `/api/ai/*`, UI in `static/js/ai.js`).
+`docs/ai.md` is the full account. Four things to know before touching it:
+
+- **`AI_SERVICE_URL` is the only AI setting in the environment.** Provider,
+  model, API keys, system prompt and context toggles live in PostgreSQL and are
+  edited under Settings → AI. Do not add an `AI_MODEL` or `ANTHROPIC_API_KEY`
+  variable; if it is product configuration it belongs in the database.
+- **The AI service must stay unreachable from outside.** It does not
+  authenticate users: it checks a shared token and trusts the identity headers
+  this dashboard forwards, which is sound only while this dashboard is the only
+  thing that can reach it. Never give it a published port or a tunnel route.
+- **The cluster snapshot is built here, server-side** (`_ai_context_bundle`), not
+  taken from the browser. `metrics.py` is the authoritative view of the cluster
+  and the assistant must reason over the same numbers the tiles show.
+- **Account deletion calls `ai.purge_user`** after the transaction commits. The
+  AI service's tables deliberately have no foreign key to `users(id)`, because
+  one would make `DELETE FROM users` fail from a table this repo has never heard
+  of. The call is best effort; its retention prune is the backstop.
+
 ## Conventions
 
 - Everything in this repo — code, comments, docs, commit messages — is in
-  **English**. The only German lives in the `de` dictionary in `i18n.js`, where it
+  **English**.
+- The AI integration (`src/ai.py`, `static/js/ai.js`, `docs/ai.md`, the AI parts
+  of the template and the stylesheet) is written **without em dashes**, matching
+  the `zer0space-ai` repo. The rest of this repo uses them freely. Match
+  whichever file you are editing rather than converting either way. The only German lives in the `de` dictionary in `i18n.js`, where it
   is data rather than code.
 - Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
 - Python: `from __future__ import annotations` at the top of every module, type

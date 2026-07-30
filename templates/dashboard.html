@@ -138,8 +138,66 @@
       </section>
 
       <!-- ============================== AI ============================== -->
+      {#
+        The assistant panel renders only when the AI gateway is wired
+        (AI_SERVICE_URL set). Without it the chat box could not work, and an
+        input that silently does nothing is worse than no input at all. The AI
+        service tiles below are unaffected either way.
+      #}
       <section class="view" id="view-ai">
-        <div class="service-grid" id="ai-grid"></div>
+        {% if ai_enabled %}
+        <div class="panel glass ai-panel" id="ai-panel">
+          <header class="panel-head">
+            <div>
+              <h2 data-i18n="ai.title">Assistent</h2>
+              <p class="faint" id="ai-subtitle" data-i18n="ai.sub">
+                Fragt den Cluster, nicht das Internet. Er sieht Nodes, Metriken,
+                Backups und den Dienstkatalog.
+              </p>
+            </div>
+            <div class="row gap-10 row-wrap ai-actions">
+              <label class="sr-only" for="ai-conversation" data-i18n="ai.conversation">Unterhaltung</label>
+              <select class="input input-sm" id="ai-conversation"></select>
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-new" data-i18n="ai.new">Neu</button>
+              <button type="button" class="btn btn-danger btn-sm" id="ai-clear" data-i18n="ai.clear">Verlauf löschen</button>
+            </div>
+          </header>
+
+          <div class="panel-body ai-body">
+            <div class="alert alert-warn" id="ai-notice" role="status" hidden></div>
+
+            <!-- aria-live is polite rather than assertive: an answer streams in
+                 token by token, and assertive would have a screen reader
+                 interrupt itself on every chunk. -->
+            <div class="ai-log" id="ai-log" role="log" aria-live="polite"></div>
+
+            <form class="ai-composer" id="ai-form" novalidate>
+              <label class="sr-only" for="ai-input" data-i18n="ai.placeholder">Frag etwas über den Cluster …</label>
+              <textarea class="input ai-input" id="ai-input" rows="1" maxlength="8000"
+                        data-i18n-ph="ai.placeholder"
+                        placeholder="Frag etwas über den Cluster …"></textarea>
+              <button class="btn btn-primary ai-send" type="submit" id="ai-send"
+                      data-i18n-aria="ai.send" aria-label="Senden">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12h14M13 6.5l5.5 5.5L13 17.5"/></svg>
+              </button>
+              <button class="btn btn-ghost ai-send" type="button" id="ai-stop" hidden
+                      data-i18n-aria="ai.stop" aria-label="Stoppen">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+              </button>
+            </form>
+            <p class="faint ai-hint" data-i18n="ai.hint">
+              Enter sendet, Shift+Enter macht einen Zeilenumbruch.
+            </p>
+          </div>
+        </div>
+        {% endif %}
+
+        <section class="block">
+          <header class="block-head">
+            <h2 data-i18n="ai.services">AI-Dienste</h2>
+          </header>
+          <div class="service-grid" id="ai-grid"></div>
+        </section>
       </section>
 
       <!-- ============================ CLOUD ============================= -->
@@ -195,6 +253,12 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.6"/><rect x="13" y="4" width="7" height="7" rx="1.6"/><rect x="4" y="13" width="7" height="7" rx="1.6"/><rect x="13" y="13" width="7" height="7" rx="1.6"/></svg>
               <span data-i18n="settings.tabServices">Dienste</span>
             </button>
+            {% if ai_enabled %}
+            <button type="button" class="settings-tab admin-only" role="tab" aria-selected="false" data-tab="ai" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="7" width="15" height="12" rx="3"/><path d="M12 7V3.8M9 12.5h.01M15 12.5h.01M9.5 16h5"/><path d="M2.4 12.5h2M19.6 12.5h2"/></svg>
+              <span data-i18n="settings.tabAi">AI</span>
+            </button>
+            {% endif %}
             <button type="button" class="settings-tab admin-only" role="tab" aria-selected="false" data-tab="admin" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3"/><path d="M3.6 19.5a5.4 5.4 0 0 1 10.8 0"/><path d="M16 6.2a3 3 0 0 1 0 5.6M17.6 19.5a5.4 5.4 0 0 0-2.4-4.5"/></svg>
               <span data-i18n="settings.tabAdmin">Admin</span>
@@ -333,6 +397,154 @@
             </div>
           </div>
           </div><!-- /pane security -->
+
+          {% if ai_enabled %}
+          <div class="tab-pane" data-pane="ai" role="tabpanel" hidden>
+
+          {#
+            Everything about the assistant is configured here and stored in
+            PostgreSQL by the AI service. There is deliberately no AI_MODEL or
+            ANTHROPIC_API_KEY environment variable: switching model is a dropdown
+            and not a stack redeploy.
+
+            The API key is write-only from this page's point of view. The server
+            returns whether a key is set plus an eight-character fingerprint,
+            never the key, so this form can never redisplay one.
+          #}
+          <div class="panel glass admin-only" hidden>
+            <header class="panel-head">
+              <div>
+                <h2 data-i18n="settings.aiTitle">AI-Assistent</h2>
+                <p class="faint" data-i18n="settings.aiSub">
+                  Anbieter, Modell und Schlüssel. Die Schlüssel liegen verschlüsselt
+                  in der Datenbank und verlassen den Server nie.
+                </p>
+              </div>
+              <span class="badge" id="ai-cfg-state" data-i18n="common.loading">Lädt …</span>
+            </header>
+
+            <div class="panel-body stack gap-18">
+              <div class="alert alert-error" id="ai-cfg-error" role="alert" hidden></div>
+              <div class="alert alert-ok" id="ai-cfg-ok" role="status" hidden></div>
+
+              <div class="field">
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-enabled">
+                  <span data-i18n="settings.aiEnabled">Assistent aktivieren</span>
+                </label>
+                <span class="faint" data-i18n="settings.aiEnabledHint">
+                  Aus bedeutet: keine Anfragen, egal ob Schlüssel hinterlegt sind.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="ai-cfg-provider" data-i18n="settings.aiProvider">Anbieter</label>
+                <select class="input" id="ai-cfg-provider"></select>
+                <span class="faint" id="ai-cfg-provider-hint"></span>
+              </div>
+
+              <div class="field">
+                <label for="ai-cfg-key" data-i18n="settings.aiKey">API-Schlüssel</label>
+                <div class="input-wrap">
+                  <input class="input input-mono" type="password" id="ai-cfg-key"
+                         autocomplete="off" spellcheck="false" maxlength="500">
+                  <button type="button" class="input-affix" data-toggle-password="ai-cfg-key"
+                          data-i18n-aria="common.showPassword" aria-label="Passwort anzeigen">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.2 12S5.8 5.6 12 5.6 21.8 12 21.8 12 18.2 18.4 12 18.4 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="2.9"/></svg>
+                  </button>
+                </div>
+                <span class="faint" id="ai-cfg-key-state"></span>
+                <div class="row gap-10 row-wrap">
+                  <button type="button" class="btn btn-ghost btn-sm" id="ai-cfg-test" data-i18n="settings.aiTest">Verbindung testen</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="ai-cfg-key-clear" data-i18n="settings.aiKeyClear">Schlüssel entfernen</button>
+                </div>
+              </div>
+
+              <div class="field" id="ai-cfg-base-field" hidden>
+                <label for="ai-cfg-base" data-i18n="settings.aiBaseUrl">Server-Adresse</label>
+                <input class="input input-mono" type="url" id="ai-cfg-base"
+                       maxlength="500" placeholder="http://192.168.0.16:11434/v1">
+                <span class="faint" data-i18n="settings.aiBaseUrlHint">
+                  Muss aus dem Container erreichbar sein, nicht von deinem Laptop.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="ai-cfg-model" data-i18n="settings.aiModel">Modell</label>
+                <div class="row gap-10 row-wrap">
+                  <select class="input" id="ai-cfg-model"></select>
+                  <button type="button" class="btn btn-ghost btn-sm" id="ai-cfg-models" data-i18n="settings.aiLoadModels">Modelle laden</button>
+                </div>
+                <span class="faint" data-i18n="settings.aiModelHint">
+                  Die Liste kommt vom Anbieter und gilt für deinen Schlüssel.
+                </span>
+              </div>
+
+              <div class="field">
+                <label for="ai-cfg-prompt" data-i18n="settings.aiPrompt">System-Prompt</label>
+                <textarea class="input ai-prompt" id="ai-cfg-prompt" maxlength="8000" rows="7"></textarea>
+              </div>
+
+              <div class="ai-cfg-grid">
+                <div class="field">
+                  <label for="ai-cfg-max-tokens" data-i18n="settings.aiMaxTokens">Antwortlänge (Tokens)</label>
+                  <input class="input" type="number" id="ai-cfg-max-tokens" min="256" max="32000" step="256">
+                  <span class="faint" data-i18n="settings.aiMaxTokensHint">
+                    Bei Modellen mit Reasoning teilen sich Denken und Antwort dieses Budget.
+                  </span>
+                </div>
+                <div class="field">
+                  <label for="ai-cfg-history" data-i18n="settings.aiHistory">Verlaufsfenster (Nachrichten)</label>
+                  <input class="input" type="number" id="ai-cfg-history" min="0" max="50" step="1">
+                  <span class="faint" data-i18n="settings.aiHistoryHint">
+                    Wird bei jeder Nachricht mitgeschickt und kostet entsprechend.
+                  </span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label data-i18n="settings.aiContext">Mitgeschickter Kontext</label>
+                <span class="faint" data-i18n="settings.aiContextHint">
+                  Jeder Abschnitt kostet Tokens bei jeder Nachricht. Bei Cloud-Anbietern
+                  verlässt er das Netz.
+                </span>
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-ctx-cluster">
+                  <span data-i18n="settings.aiCtxCluster">Swarm-Status und Dienste</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-ctx-hosts">
+                  <span data-i18n="settings.aiCtxHosts">Host-Metriken</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-ctx-backups">
+                  <span data-i18n="settings.aiCtxBackups">Backup-Status</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-ctx-services">
+                  <span data-i18n="settings.aiCtxServices">Dienstkatalog</span>
+                </label>
+              </div>
+
+              <div class="field">
+                <label class="check">
+                  <input type="checkbox" id="ai-cfg-tools">
+                  <span data-i18n="settings.aiTools">Werkzeuge erlauben (nur lesend)</span>
+                </label>
+                <span class="faint" data-i18n="settings.aiToolsHint">
+                  Erlaubt gezielte Abfragen statt alles in jeder Nachricht mitzuschicken.
+                  Kein Werkzeug verändert etwas.
+                </span>
+              </div>
+
+              <div class="row gap-10 row-wrap">
+                <button type="button" class="btn btn-primary" id="ai-cfg-save" data-i18n="common.save">Speichern</button>
+                <span class="faint" id="ai-cfg-updated"></span>
+              </div>
+            </div>
+          </div>
+          </div><!-- /pane ai -->
+          {% endif %}
 
           <div class="tab-pane" data-pane="admin" role="tabpanel" hidden>
 
@@ -631,5 +843,10 @@
 <script src="/static/js/api.js?v={{ asset_version }}"></script>
 <script src="/static/js/icons.js?v={{ asset_version }}"></script>
 <script src="/static/js/password-strength.js?v={{ asset_version }}"></script>
+{% if ai_enabled %}
+{# Defines window.ZS_AI. Loaded before app.js, which calls into it when the AI
+   view opens and when the language changes. #}
+<script src="/static/js/ai.js?v={{ asset_version }}" defer></script>
+{% endif %}
 <script src="/static/js/app.js?v={{ asset_version }}" defer></script>
 {% endblock %}
