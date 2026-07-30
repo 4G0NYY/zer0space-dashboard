@@ -46,7 +46,7 @@ from . import auth, config, crimson, crimson_sso, db, metrics, totp, vault
 # Bump when static assets change in a way browsers must not keep. Templates
 # append it to every CSS/JS URL, which is what makes it safe to serve them with
 # a long max-age despite there being no build step and no content hashes.
-ASSET_VERSION = "4.3.0"
+ASSET_VERSION = "4.3.1"
 
 # Ceiling on a buffered request body. The API only ever receives small JSON
 # objects — the largest legitimate one is a vault entry, capped by

@@ -28,6 +28,14 @@
 
   var SAFE = { GET: 1, HEAD: 1, OPTIONS: 1 };
 
+  /* Mirrors CsrfMiddleware.EXEMPT in src/main.py. All three run before a session
+     exists, so there is no token to hold and the server deliberately does not ask
+     for one. They must be listed here too: the fail-closed check below cannot
+     tell "the token has not loaded yet" from "this endpoint never has one", and
+     without this it makes signing in, redeeming an invite and the first-run setup
+     wizard unreachable — the failure mode is a locked-out dashboard. */
+  var CSRF_EXEMPT = { '/api/login': 1, '/api/setup': 1, '/api/register': 1 };
+
   async function request(method, path, body) {
     var options = { method: method, headers: {}, credentials: 'same-origin' };
 
@@ -35,7 +43,7 @@
       options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(body);
     }
-    if (!SAFE[method]) {
+    if (!SAFE[method] && !CSRF_EXEMPT[path]) {
       /* Fail closed. Sending the request without the header just earns a 403
          from the server middleware, which surfaces to the user as an
          unexplained failure — the real cause is almost always a click that
