@@ -493,6 +493,38 @@ if config.CRIMSON_ENABLED:
             inject_user=user, forwarded_prefix="/crimson/api",
         )
 
+    # Media sub-resource relays at the *root*. The backend's same-origin HLS
+    # proxies (VOE, PlayIMDb, …) rewrite every playlist sub-resource to a
+    # ROOT-relative path like ``/voe_proxy?u=…`` — correct for their own
+    # root-mounted deployment, but behind our ``/crimson/api`` mount hls.js
+    # resolves them against the origin, so a segment lands at
+    # ``zer0space.com/voe_proxy`` instead of ``…/crimson/api/voe_proxy`` and 404s
+    # (the classic "master playlist loads, then the player greys out" for VOE).
+    # Forward any ``/<name>_proxy`` back to the backend so the whole segment chain
+    # resolves. The links are HMAC-signed with the backend's PROXY_SECRET and
+    # re-verified there; the session gate just keeps the relay signed-in-only.
+    @app.api_route(
+        "/{proxy_name}_proxy", methods=["GET", "HEAD", "OPTIONS"], include_in_schema=False
+    )
+    async def crimson_media_proxy(request: Request, proxy_name: str) -> Response:
+        if _crimson_user(request) is None:
+            return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+        return await crimson.proxy(request, config.CRIMSON_API_URL, f"{proxy_name}_proxy")
+
+    @app.api_route(
+        "/{proxy_name}_proxy/{rest:path}",
+        methods=["GET", "HEAD", "OPTIONS"],
+        include_in_schema=False,
+    )
+    async def crimson_media_proxy_sub(
+        request: Request, proxy_name: str, rest: str
+    ) -> Response:
+        if _crimson_user(request) is None:
+            return fail(401, "UNAUTHORIZED", "Sign in to zer0space to use Crimson")
+        return await crimson.proxy(
+            request, config.CRIMSON_API_URL, f"{proxy_name}_proxy/{rest}"
+        )
+
     @app.get("/crimson", include_in_schema=False)
     async def crimson_root(request: Request) -> Response:
         if _crimson_user(request) is None:
