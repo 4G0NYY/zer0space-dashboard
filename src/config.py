@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from ipaddress import ip_address, ip_network
 from pathlib import Path
+from typing import Any
 
 SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/run/secrets"))
 
@@ -148,6 +150,61 @@ COOKIE_SECURE = FORCE_HTTPS or _bool("COOKIE_SECURE", False)
 # is the value to trust. Set to false when the dashboard is exposed directly,
 # where that header would be attacker-controlled.
 TRUST_PROXY = _bool("TRUST_PROXY", True)
+
+# Which peers are allowed to speak for someone else via cf-connecting-ip /
+# x-forwarded-for. TRUST_PROXY alone is not enough: it says "read the header",
+# not "and only from the tunnel". With this list empty the header is taken from
+# any peer, which is what let anyone reachable on the LAN port forge a fresh
+# source address per request and walk straight through the per-IP rate limits.
+#
+# Comma-separated CIDRs, e.g. "10.0.0.0/8". Entries that do not parse are logged
+# and skipped rather than raised: one typo must not take the dashboard down at
+# boot, and the failure mode of skipping is "trust less", not "trust more".
+def _parse_networks(raw: str | None) -> list[Any]:
+    out: list[Any] = []
+    for piece in (raw or "").split(","):
+        entry = piece.strip()
+        if not entry:
+            continue
+        try:
+            out.append(ip_network(entry, strict=False))
+        except ValueError:
+            print(f'[config] TRUSTED_PROXY_IPS: ignoring malformed entry "{entry}"')
+    return out
+
+
+TRUSTED_PROXY_IPS = _parse_networks(os.environ.get("TRUSTED_PROXY_IPS"))
+
+
+def peer_is_trusted_proxy(addr: str | None) -> bool:
+    """May this immediate peer speak for another address?
+
+    An empty TRUSTED_PROXY_IPS means "no list configured", which preserves the
+    previous behaviour of trusting the header from anyone. An unparseable peer
+    address is never trusted.
+    """
+    if not TRUSTED_PROXY_IPS:
+        return True
+    if not addr:
+        return False
+    try:
+        parsed = ip_address(addr)
+    except ValueError:
+        return False
+    return any(parsed in net for net in TRUSTED_PROXY_IPS)
+
+# The address the dashboard is publicly reachable at, e.g.
+# "https://zer0space.com". When set it is the source of truth for the
+# X-Forwarded-Proto / X-Forwarded-Host the Crimson gateway hands its backend,
+# which otherwise come from the client's own Host header and steer the absolute
+# stream URLs the backend generates. Unset keeps the previous header-derived
+# behaviour, so this is inert until a deployment opts in.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/") or None
+
+# Host header allow list. Empty disables the check and keeps current behaviour;
+# set it in production so a forged Host cannot reach request-handling code at
+# all. Comma-separated; a leading "." works as a subdomain wildcard.
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
 
 # --- Metrics ----------------------------------------------------------------
 

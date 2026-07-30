@@ -225,8 +225,19 @@ def client_ip(request: Request) -> str:
     container, so the socket address is useless here. ``cf-connecting-ip`` is set
     by Cloudflare and is the value to trust when TRUST_PROXY is on; without that
     guard a single spoofed header would let an attacker dodge every per-IP limit.
+
+    TRUST_PROXY on its own only says "read the header", not "and only from the
+    tunnel", so it is paired with a peer check: a caller that is not itself a
+    trusted proxy is counted by its socket address no matter what it claims. Note
+    that the socket address is only meaningful if uvicorn is *not* started with
+    ``--forwarded-allow-ips '*'`` — with that flag the ASGI server has already
+    overwritten it from a client-supplied X-Forwarded-For, which is why the
+    Dockerfile no longer passes it. Both halves are required; either one alone
+    leaves a spoofable path.
     """
-    if config.TRUST_PROXY:
+    if config.TRUST_PROXY and config.peer_is_trusted_proxy(
+        request.client.host if request.client else None
+    ):
         cf = request.headers.get("cf-connecting-ip")
         if cf:
             return cf.strip()[:100]
