@@ -1,13 +1,43 @@
 services:
   dashboard:
     image: ghcr.io/zer0space-net/zer0space-dashboard:latest
-    ports:
-      - "8080:3000"
+    # ── LAN port: deliberately NOT published ───────────────────────────────────────────
+    # This used to publish "8080:3000". In Swarm the short syntax means mode:
+    # ingress, so the dashboard answered on EVERY node's LAN address, entirely
+    # bypassing the Cloudflare Tunnel. Requests arriving that way never pass
+    # through Cloudflare, so cf-connecting-ip on them is whatever the caller
+    # typed — which let anyone on the LAN forge a fresh source address per
+    # request and walk through every per-IP rate limit, including the one
+    # protecting /api/register.
+    #
+    # Reach the dashboard through the tunnel. If you genuinely need the LAN port
+    # back, uncomment it AND narrow TRUSTED_PROXY_IPS below to the tunnel's
+    # subnet only, or the rate limits go back to being advisory:
+    #   ports:
+    #     - "8080:3000"
     environment:
       - DOCKER_PROXY_URL=http://socketproxy:2375
       - TZ=Europe/Zurich
-      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      # Defaults to true now. The session holds the derived vault key for
+      # SESSION_MAX_AGE (24h), so this cookie is not just an auth token: whoever
+      # captures it can read every stored credential. Sending it over plain HTTP
+      # put it on the wire in cleartext. Set to false ONLY if you have restored
+      # the plain-HTTP LAN port above and accept that trade.
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
       - FORCE_HTTPS=${FORCE_HTTPS:-false}
+      # Host allow list. Empty disables the check. Set it to the real hostname(s)
+      # so a forged Host header cannot steer the absolute stream URLs the Crimson
+      # backend builds from X-Forwarded-Host.
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      # The dashboard's real public address. When set, this is what the Crimson
+      # gateway forwards to its backend instead of the client's Host header.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # Read by uvicorn itself (not by src/config.py). The image no longer passes
+      # --forwarded-allow-ips '*', which had made request.client.host
+      # attacker-controlled and silently defeated TRUST_PROXY=false. Leave unset
+      # to keep uvicorn's safe 127.0.0.1 default; set it to the tunnel's overlay
+      # subnet if you terminate X-Forwarded-For there.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-}
       - GLANCES_SERVICE=${GLANCES_SERVICE:-dashboard_glances}
       - GLANCES_PORT=${GLANCES_PORT:-61208}
       # ── Standalone hosts (not Swarm members) ───────────────────────────────────────────
@@ -28,12 +58,23 @@ services:
       # immediately, and never exists as an env var, in this file, in Portainer's
       # UI or in a shell history. /setup seals itself once that account exists.
       #
-      # ── TRUST_PROXY ────────────────────────────────────────────────────────────────────
+      # ── TRUST_PROXY / TRUSTED_PROXY_IPS ────────────────────────────────────────────────
       # Behind the Cloudflare Tunnel every request arrives from the tunnel
-      # container, so per-IP rate limiting reads cf-connecting-ip. Set to false
-      # ONLY if the dashboard is exposed directly, where that header would be
-      # attacker-controlled and could be used to dodge the limits.
+      # container, so per-IP rate limiting reads cf-connecting-ip.
+      #
+      # TRUST_PROXY on its own only says "read that header" — it does not say
+      # "and only from the tunnel", which is why it was not sufficient. Pair it
+      # with TRUSTED_PROXY_IPS: any peer outside that list is counted by its real
+      # socket address no matter what header it sends.
+      #
+      # Empty means "no list configured" and keeps the old trust-everyone
+      # behaviour, which is safe only while no LAN port is published above. Find
+      # the right value with:
+      #   docker network inspect cloudflared_proxy -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+      # and set it to that subnet alone — not to 10.0.0.0/8, which would also
+      # cover the ingress gateway that LAN traffic arrives from.
       - TRUST_PROXY=${TRUST_PROXY:-true}
+      - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:-}
       # ── PostgreSQL (zer0space-postgres, standalone on zs-state-01) ─────────────────────
       # Either DATABASE_URL as a whole, OR the individual values below.
       # The password is NOT here — it comes from the db_password Swarm secret
@@ -60,7 +101,16 @@ services:
       # blank to turn the whole gateway off (then /crimson 404s).
       - CRIMSON_CLIENT_URL=${CRIMSON_CLIENT_URL:-http://zer0space-crimson-client:80}
       - CRIMSON_API_URL=${CRIMSON_API_URL:-http://zer0space-crimson-api:8000}
-      - CRIMSON_SSO_INVITE_CODE=${CRIMSON_SSO_INVITE_CODE:-zer0space}
+      # No default. This is a live registration credential for the Crimson
+      # backend, not a configuration knob: it is sent as invite_code to
+      # POST /auth/register. The previous default ("zer0space") shipped in a
+      # public repository, so anyone who read the repo could register accounts
+      # directly against the backend and bypass this gateway entirely. That code
+      # should be treated as burned and rotated on the backend. Set this as stack
+      # env in Portainer, or promote it to a Swarm secret alongside the others.
+      # Leave it empty and the SSO broker simply stays off (CRIMSON_SSO_ENABLED
+      # is false), which degrades to shared browsing rather than failing.
+      - CRIMSON_SSO_INVITE_CODE=${CRIMSON_SSO_INVITE_CODE:-}
     secrets:
       # Read from /run/secrets/<name> by src/config.py (config.read_secret),
       # which falls back to the matching env var only when the file is absent.
@@ -113,11 +163,21 @@ services:
           memory: 64M
 
   socketproxy:
+    # Pin this. The container's whole job is to stand between an attacker and
+    # host root on a manager node, and its deny behaviour is INHERITED from the
+    # image's defaults rather than declared here. An untagged image resolves to
+    # :latest, so a new release that adds an endpoint group or changes a default
+    # would change what the Docker socket exposes with no diff in this file.
+    # Replace with a digest once you have pulled a known-good one:
+    #   docker image inspect tecnativa/docker-socket-proxy --format '{{index .RepoDigests 0}}'
     image: tecnativa/docker-socket-proxy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      # Only what the dashboard needs — everything else explicitly off
+      # Only what the dashboard needs. The dangerous groups are now listed
+      # explicitly rather than relying on the image defaulting them to 0 — the
+      # comment already claimed they were "explicitly off", and this makes that
+      # true and greppable instead of a property of some other project's code.
       - SERVICES=1
       - NODES=1
       - TASKS=1
@@ -127,6 +187,24 @@ services:
       - VOLUMES=0
       - AUTH=0
       - POST=0
+      - SECRETS=0
+      - CONFIGS=0
+      - SWARM=0
+      - EXEC=0
+      - SYSTEM=0
+      - INFO=0
+      - PLUGINS=0
+      - BUILD=0
+      - COMMIT=0
+      - DISTRIBUTION=0
+      - SESSION=0
+      - ALLOW_RESTARTS=0
+    # no-new-privileges is safe to set blind. read_only: true and cap_drop: [ALL]
+    # are the obvious next step but are NOT set here: this image runs HAProxy,
+    # which wants a writable runtime dir and may need SETUID/SETGID to drop
+    # privileges. Worth adding once someone can watch the service converge.
+    security_opt:
+      - no-new-privileges:true
     networks:
       - dashboard_net
     deploy:
@@ -147,6 +225,8 @@ services:
           memory: 16M
 
   glances:
+    # Floating tag. Worth pinning to a release digest for the same reason as the
+    # socketproxy above, especially while this service is reachable on the LAN.
     image: nicolargo/glances:latest-full
     entrypoint: ["python3", "-m", "glances", "-w"]
     hostname: "{{.Node.Hostname}}"
@@ -156,15 +236,38 @@ services:
     # Backend connects via Status.Addr from /nodes (LAN IP) instead of overlay IPs.
     # No overlay network — Glances is not part of dashboard_net.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # The Docker socket mount is REMOVED on purpose. `:ro` on a unix socket
+      # only makes the inode read-only; the Docker API behind it stays fully
+      # read-write. So any code execution inside this container — a Glances or
+      # dependency bug, or a bad pull of the floating image tag above — could
+      # create a privileged container bind-mounting the host root filesystem.
+      # With mode: global that is host root on every node in the Swarm.
+      #
+      # Nothing needs it: src/metrics.py only reads system, cpu, mem, fs and
+      # network from Glances. It never asks for container metrics.
       - /sys:/sys:ro
       - /etc/hostname:/etc/hostname:ro
       - /etc/os-release:/etc/os-release:ro
+    # ── STILL UNAUTHENTICATED — firewall this port ─────────────────────────────────────
+    # `glances -w` has no --username/--password here, so anything that can reach
+    # TCP/61208 on any node reads that host's full process list (argv included),
+    # mounts, interfaces and users, with no credentials. mode: host binds it to
+    # the host NIC on 0.0.0.0, and the two standalone hosts in EXTRA_HOSTS must
+    # be running the same thing for their cards to work.
+    #
+    # The port cannot simply be dropped: the dashboard reaches each node at its
+    # LAN address (Status.Addr from /nodes), so host-mode publishing is what
+    # makes per-node metrics work at all. Until Glances auth is wired up on both
+    # ends, restrict it at the firewall on every node, e.g.
+    #   ufw allow from 192.168.0.0/24 to any port 61208 proto tcp
+    #   ufw deny 61208
     ports:
       - target: 61208
         published: 61208
         protocol: tcp
         mode: host
+    security_opt:
+      - no-new-privileges:true
     deploy:
       mode: global
       restart_policy:
@@ -180,6 +283,14 @@ services:
 networks:
   dashboard_net:
     driver: overlay
+    driver_opts:
+      # Overlay traffic is plain VXLAN on UDP/4789 unless this is set, so it
+      # crosses the LAN in the clear between nodes. What rides on this network is
+      # the socketproxy's Docker API responses (the whole Swarm topology).
+      # Costs roughly 10% throughput and needs ESP (IP protocol 50) allowed
+      # between nodes. NOTE: Docker cannot flip this on an existing network —
+      # `docker network rm dashboard_net` before redeploying the stack.
+      encrypted: "true"
   cloudflared_proxy:
     external: true
   # Shared with the crimson-backend + crimson-client stacks. Create once on a
